@@ -1,0 +1,131 @@
+"use client";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { useLang } from "@/context/LanguageContext";
+import { supabase } from "@/lib/supabase";
+import BottomNav from "@/components/BottomNav";
+
+export default function ProfilePage() {
+  const { user, profile, signOut, refreshProfile } = useAuth();
+  const { t, lang, setLang } = useLang();
+  const router = useRouter();
+  const [goal, setGoal] = useState("2000");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  // Sync goal input when profile loads from Supabase
+  useEffect(() => {
+    if (profile?.daily_goal_calories) {
+      setGoal(profile.daily_goal_calories.toString());
+    }
+  }, [profile]);
+
+  const handleSaveGoal = async () => {
+    if (!user) return;
+    const parsed = parseInt(goal);
+    if (isNaN(parsed) || parsed < 500 || parsed > 15000) {
+      setSaveError("Enter a value between 500 and 15000");
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({ id: user.id, email: user.email!, daily_goal_calories: parsed, preferred_language: lang });
+    if (error) {
+      setSaveError(error.message);
+    } else {
+      await refreshProfile();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
+    setSaving(false);
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.replace("/login");
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F2F2F7]" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="bg-white px-4 py-3 border-b border-gray-100">
+        <h1 className="text-2xl font-bold text-gray-900">{t.profile}</h1>
+      </div>
+
+      <div className="px-4 py-4 pb-32 space-y-4">
+        {/* User Info */}
+        <div className="card p-4">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-[#007AFF] flex items-center justify-center">
+              <span className="text-white text-2xl font-bold">
+                {user?.email?.[0].toUpperCase()}
+              </span>
+            </div>
+            <div>
+              <div className="font-semibold text-gray-900">{user?.email}</div>
+              <div className="text-sm text-[#8E8E93]">{t.welcomeBack}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Settings */}
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50">
+            <div className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-2">{t.dailyGoal}</div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={goal}
+                onChange={e => { setGoal(e.target.value); setSaveError(""); }}
+                className="flex-1 text-2xl font-bold text-gray-900 outline-none"
+                min={500}
+                max={15000}
+              />
+              <span className="text-[#8E8E93]">kcal</span>
+              <button
+                onClick={handleSaveGoal}
+                disabled={saving}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  saved ? "bg-[#34C759] text-white" : "bg-[#007AFF] text-white"
+                }`}
+              >
+                {saved ? "✓" : saving ? "..." : t.update}
+              </button>
+            </div>
+            {saveError && <p className="text-xs text-[#FF3B30] mt-2">{saveError}</p>}
+          </div>
+
+          {/* Language */}
+          <div className="px-4 py-3">
+            <div className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-2">{t.language}</div>
+            <div className="flex gap-2">
+              {(["en", "pt"] as const).map(l => (
+                <button
+                  key={l}
+                  onClick={() => setLang(l)}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                    lang === l ? "bg-[#007AFF] text-white" : "bg-[#F2F2F7] text-[#8E8E93]"
+                  }`}
+                >
+                  {l === "en" ? "English" : "Português"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Sign Out */}
+        <button
+          onClick={handleSignOut}
+          className="w-full py-4 rounded-2xl bg-white text-[#FF3B30] font-semibold text-base"
+        >
+          {t.logout}
+        </button>
+      </div>
+      <BottomNav />
+    </div>
+  );
+}

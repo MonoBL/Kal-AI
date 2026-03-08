@@ -1,26 +1,85 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ios-blue: #007AFF;
+  --ios-green: #34C759;
+  --ios-red: #FF3B30;
+  --ios-orange: #FF9500;
+  --ios-gray: #8E8E93;
+  --ios-gray2: #636366;
+  --ios-gray6: #F2F2F7;
+  --safe-area-top: env(safe-area-inset-top);
+  --safe-area-bottom: env(safe-area-inset-bottom);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #F2F2F7;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  margin: 0;
+}
+
+/* App shell — full width on all devices */
+.app-shell {
+  min-height: 100svh;
+  background: #F2F2F7;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-left { padding-left: env(safe-area-inset-left); }
+.safe-right { padding-right: env(safe-area-inset-right); }
+
+.card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.ios-button {
+  background: var(--ios-blue);
+  color: white;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 17px;
+  padding: 16px;
+  width: 100%;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.ios-button:active { opacity: 0.7; }
+.ios-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ios-button-secondary {
+  background: var(--ios-gray6);
+  color: var(--ios-blue);
+}
+
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(255,255,255,0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 0.5px solid rgba(0,0,0,0.12);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 100;
 }
