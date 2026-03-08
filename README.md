@@ -6,7 +6,7 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=flat-square&logo=tailwindcss)
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase)
-![Gemini](https://img.shields.io/badge/Google-Gemini%202.0-4285F4?style=flat-square&logo=google)
+![Gemini](https://img.shields.io/badge/Google-Gemini%202.5%20Flash-4285F4?style=flat-square&logo=google)
 ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8?style=flat-square)
 
 ---
@@ -15,7 +15,7 @@
 
 | Feature | Description |
 |---|---|
-| 📸 **AI Meal Analysis** | Take a photo of your food — Gemini 2.0 Flash-Lite identifies it, estimates portion size, and returns calories + macros |
+| 📸 **AI Meal Analysis** | Take a photo of your food — Gemini 2.5 Flash identifies it, estimates portion size, and returns calories + macros |
 | 🥩 **Ingredient Builder** | Select ingredients from categorized dropdowns (grains, meat, fish, vegetables, etc.) with gram inputs |
 | 📊 **Daily Dashboard** | Circular calorie ring, macro progress bars, and a live meal list |
 | 📈 **Weekly / Monthly Charts** | Area chart and bar chart showing calorie trends over time (Recharts) |
@@ -145,7 +145,7 @@ The Gemini API route at `/api/analyze` uses a structured system prompt:
 | Framework | Next.js 16 (App Router) |
 | Styling | Tailwind CSS v4 |
 | Database & Auth | Supabase (PostgreSQL + Auth) |
-| AI | Google Gemini 2.0 Flash-Lite |
+| AI | Google Gemini 2.5 Flash |
 | Charts | Recharts |
 | PWA | next-pwa |
 | Language | TypeScript |

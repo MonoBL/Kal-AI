@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const imageFile = formData.get("image") as File | null;
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-lite",
+      model: "gemini-2.5-flash",
       systemInstruction: SYSTEM_PROMPT,
     });
 
