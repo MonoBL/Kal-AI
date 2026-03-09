@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BUILD_ID: buildId,
   },
   images: {
+    dangerouslyAllowSVG: true,
     remotePatterns: [
       { protocol: "https", hostname: "kdbffqebtazrgwybcsce.supabase.co" },
     ],

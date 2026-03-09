@@ -128,7 +128,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="bg-white px-4 pt-3 pb-3 flex items-center justify-between border-b border-gray-100">
         <div className="flex items-center gap-2">
-          <Image src="/plate-logo.svg" alt="Kal AI" width={36} height={36} />
+          <Image src="/plate-logo.svg" alt="Kal AI" width={36} height={36} unoptimized />
           <h1 className="text-2xl font-bold text-gray-900">{t.appName}</h1>
         </div>
         <button
