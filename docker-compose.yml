@@ -1,0 +1,21 @@
+services:
+  kal-ai:
+    image: ghcr.io/monobl/kal-ai:latest
+    container_name: kal-ai
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=60
+      - WATCHTOWER_INCLUDE_STOPPED=true
+    command: kal-ai

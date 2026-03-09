@@ -10,6 +10,7 @@ const buildDate = new Date().toISOString();
 const buildId = buildDate.replace(/[-:T]/g, "").slice(0, 12);
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   env: {
     NEXT_PUBLIC_BUILD_DATE: buildDate,
     NEXT_PUBLIC_BUILD_ID: buildId,
