@@ -124,6 +124,20 @@ export default function ProfilePage() {
         >
           {t.logout}
         </button>
+
+        {/* Version info */}
+        <div className="pt-4 pb-2 text-center">
+          <p className="text-xs text-[#8E8E93] leading-relaxed">
+            Kal AI v0.1.0<br />
+            Build: {process.env.NEXT_PUBLIC_BUILD_ID || "dev"}<br />
+            {process.env.NEXT_PUBLIC_BUILD_DATE
+              ? new Date(process.env.NEXT_PUBLIC_BUILD_DATE).toLocaleDateString(
+                  lang === "pt" ? "pt-PT" : "en-GB",
+                  { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }
+                )
+              : "Development"}
+          </p>
+        </div>
       </div>
       <BottomNav />
     </div>

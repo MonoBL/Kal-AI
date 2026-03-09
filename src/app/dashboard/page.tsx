@@ -320,17 +320,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* FAB - Log Meal */}
-      <button
-        onClick={() => router.push("/log")}
-        className="fixed bottom-24 right-5 w-14 h-14 bg-[#007AFF] rounded-full shadow-lg flex items-center justify-center z-50"
-        style={{ boxShadow: "0 4px 20px rgba(0, 122, 255, 0.4)" }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" className="w-7 h-7">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-        </svg>
-      </button>
-
       <BottomNav />
     </div>
   );

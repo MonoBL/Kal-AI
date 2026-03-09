@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { LanguageProvider } from "@/context/LanguageContext";
+import FeedbackWidget from "@/components/FeedbackWidget";
+import FloatingActions from "@/components/FloatingActions";
 
 export const metadata: Metadata = {
   title: "Kal AI",
@@ -39,6 +41,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AuthProvider>
             <LanguageProvider>
               {children}
+              <FloatingActions />
+              <FeedbackWidget />
             </LanguageProvider>
           </AuthProvider>
         </div>

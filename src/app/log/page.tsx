@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { supabase } from "@/lib/supabase";
+import type { MealType } from "@/lib/supabase";
 import BottomNav from "@/components/BottomNav";
 import Image from "next/image";
 
@@ -168,7 +169,8 @@ export default function LogPage() {
   const { user } = useAuth();
   const { t, lang } = useLang();
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const [items, setItems] = useState<FoodItem[]>([
     { id: nextId++, catIdx: 0, foodIdx: 0, grams: "" },
@@ -180,6 +182,8 @@ export default function LogPage() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [mealType, setMealType] = useState<MealType>("lunch");
+  const [mealDate, setMealDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const addItem = () => {
     setItems(prev => [...prev, { id: nextId++, catIdx: 1, foodIdx: 0, grams: "" }]);
@@ -263,6 +267,8 @@ export default function LogPage() {
         carbs: result.macros.carbs,
         fats: result.macros.fats,
         image_url: imageUrl,
+        meal_type: mealType,
+        created_at: new Date(mealDate + "T" + new Date().toTimeString().slice(0, 8)).toISOString(),
       });
       router.push("/dashboard");
     } catch {
@@ -283,27 +289,81 @@ export default function LogPage() {
       </div>
 
       <div className="px-4 py-4 pb-32 space-y-3">
-        {/* Camera */}
-        <div className="card overflow-hidden cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-          {imagePreview ? (
+        {/* Photo section */}
+        {imagePreview ? (
+          <div className="card overflow-hidden">
             <div className="relative w-full h-44">
               <Image src={imagePreview} alt="meal" fill style={{ objectFit: "cover" }} />
-              <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                <span className="text-white text-sm font-medium bg-black/40 px-3 py-1 rounded-full">Tap to change</span>
-              </div>
+              <button
+                onClick={() => { setImage(null); setImagePreview(null); setResult(null); }}
+                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center text-sm"
+              >
+                ✕
+              </button>
             </div>
-          ) : (
-            <div className="h-44 flex flex-col items-center justify-center gap-2">
-              <svg viewBox="0 0 24 24" fill="none" strokeWidth="1.5" stroke="#C7C7CC" className="w-10 h-10">
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <button
+              onClick={() => cameraInputRef.current?.click()}
+              className="flex-1 card py-5 flex flex-col items-center justify-center gap-2 cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="1.5" stroke="#007AFF" className="w-8 h-8">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <span className="text-[#007AFF] font-semibold text-sm">{t.takePhoto}</span>
-              <span className="text-xs text-[#C7C7CC]">Optional — add a photo for better accuracy</span>
+            </button>
+            <button
+              onClick={() => galleryInputRef.current?.click()}
+              className="flex-1 card py-5 flex flex-col items-center justify-center gap-2 cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="1.5" stroke="#007AFF" className="w-8 h-8">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+              <span className="text-[#007AFF] font-semibold text-sm">{t.uploadPhoto}</span>
+            </button>
+          </div>
+        )}
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
+        <input ref={galleryInputRef} type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+
+        {/* Date & Meal Type */}
+        <div className="card p-3 space-y-3">
+          <div className="flex gap-3">
+            {/* Date picker */}
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-1 block">{t.mealDate}</label>
+              <input
+                type="date"
+                value={mealDate}
+                onChange={e => setMealDate(e.target.value)}
+                className="w-full bg-[#F2F2F7] rounded-xl px-3 py-2.5 text-sm font-medium text-gray-800 outline-none border-0"
+              />
             </div>
-          )}
+            {/* Meal type */}
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-1 block">{t.mealType}</label>
+              <div className="relative">
+                <select
+                  value={mealType}
+                  onChange={e => setMealType(e.target.value as MealType)}
+                  className="w-full bg-[#F2F2F7] rounded-xl px-3 py-2.5 text-sm font-medium text-gray-800 outline-none appearance-none border-0"
+                >
+                  <option value="breakfast">{t.breakfast}</option>
+                  <option value="lunch">{t.lunch}</option>
+                  <option value="dinner">{t.dinner}</option>
+                  <option value="snack">{t.snack}</option>
+                </select>
+                <svg className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8E8E93] pointer-events-none" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+          </div>
         </div>
-        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageChange} className="hidden" />
 
         {/* "I don't know quantities" toggle */}
         <button

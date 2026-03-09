@@ -17,11 +17,13 @@
 |---|---|
 | 📸 **AI Meal Analysis** | Take a photo of your food — Gemini 2.5 Flash identifies it, estimates portion size, and returns calories + macros |
 | 🥩 **Ingredient Builder** | Select ingredients from categorized dropdowns (grains, meat, fish, vegetables, etc.) with gram inputs |
+| 🍪 **Common Snacks** | Save packaged snacks by photographing the nutrition label — AI reads per-serving macros. Quick-log later with a tap + quantity picker |
 | 📊 **Daily Dashboard** | Circular calorie ring, macro progress bars, and a live meal list |
 | 📈 **Weekly / Monthly Charts** | Area chart and bar chart showing calorie trends over time (Recharts) |
 | 🏥 **Apple Health Aesthetic** | SF Pro font stack, iOS color palette, frosted-glass bottom nav, safe-area support |
 | 🌍 **Bilingual** | Full English ↔ Portuguese toggle — food names, UI labels, and AI responses |
 | 🔐 **Auth** | Email/password + Google OAuth via Supabase Auth |
+| 💬 **Feedback System** | In-app bug reports and feature requests with screenshot attachments |
 | 📱 **Installable PWA** | `manifest.json` + service worker — add to Home Screen on iPhone |
 
 ---
@@ -37,22 +39,28 @@
 ```
 src/
 ├── app/
-│   ├── page.tsx              # Auth redirect root
-│   ├── login/page.tsx        # Login + Sign Up + Google OAuth
-│   ├── dashboard/page.tsx    # Today / Weekly / Monthly tabs
-│   ├── log/page.tsx          # Meal logging (camera + ingredient builder)
-│   ├── history/page.tsx      # Meal history grouped by date
-│   ├── profile/page.tsx      # Settings, calorie goal, language
-│   └── api/analyze/route.ts  # Gemini AI endpoint (server-side)
+│   ├── page.tsx                    # Auth redirect root
+│   ├── login/page.tsx              # Login + Sign Up + Google OAuth
+│   ├── dashboard/page.tsx          # Today / Weekly / Monthly tabs
+│   ├── log/page.tsx                # Meal logging (camera + ingredient builder)
+│   ├── snacks/page.tsx             # Common snacks manager + quick-log
+│   ├── history/page.tsx            # Meal history grouped by date
+│   ├── profile/page.tsx            # Settings, calorie goal, language, version info
+│   └── api/
+│       ├── analyze/route.ts        # Gemini meal analysis endpoint
+│       ├── analyze-label/route.ts  # Gemini nutrition label reader
+│       └── feedback/route.ts       # Bug reports & feature requests
 ├── components/
-│   ├── BottomNav.tsx         # iOS-style tab bar
-│   └── CircularProgress.tsx  # SVG calorie ring
+│   ├── BottomNav.tsx               # iOS-style tab bar (5 tabs)
+│   ├── CircularProgress.tsx        # SVG calorie ring
+│   ├── FloatingActions.tsx         # Global FAB (+ log meal)
+│   └── FeedbackWidget.tsx          # Floating feedback modal
 ├── context/
-│   ├── AuthContext.tsx       # Supabase auth state
-│   └── LanguageContext.tsx   # EN / PT i18n
+│   ├── AuthContext.tsx             # Supabase auth state
+│   └── LanguageContext.tsx         # EN / PT i18n
 └── lib/
-    ├── supabase.ts           # Supabase client + TypeScript types
-    └── i18n.ts               # Translation strings
+    ├── supabase.ts                 # Supabase client + TypeScript types
+    └── i18n.ts                     # Translation strings
 ```
 
 ---
@@ -113,12 +121,46 @@ ALTER TABLE meals ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "manage own meals" ON meals FOR ALL USING (auth.uid() = user_id);
 ```
 
+-- Common snacks table
+CREATE TABLE common_snacks (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  name text NOT NULL,
+  image_url text,
+  serving_name text NOT NULL,
+  serving_weight_g numeric NOT NULL,
+  calories_per_serving numeric NOT NULL,
+  protein_per_serving numeric NOT NULL,
+  carbs_per_serving numeric NOT NULL,
+  fats_per_serving numeric NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE common_snacks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "manage own snacks" ON common_snacks FOR ALL
+  USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- Feedback table
+CREATE TABLE feedback (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid REFERENCES auth.users(id),
+  email text,
+  type text CHECK (type IN ('bug', 'feature')),
+  description text NOT NULL,
+  screenshot_urls text[] DEFAULT '{}',
+  status text DEFAULT 'open',
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "insert own feedback" ON feedback FOR INSERT WITH CHECK (auth.uid() = user_id);
+```
+
 Then create a **Storage bucket** named `meal-images` (set to **public**).
+Also create a **Storage bucket** named `feedback-screenshots` (set to **public**).
 
 ### 4. Run locally
 
 ```bash
-npm run dev     # http://localhost:3000
+npm run dev     # http://localhost:5050
 npm run build   # production build
 npm start       # production server
 ```
@@ -129,12 +171,17 @@ npm start       # production server
 
 ## 🤖 AI Strategy
 
-The Gemini API route at `/api/analyze` uses a structured system prompt:
-
+**Meal Analysis** (`/api/analyze`):
 - If the user provides **grams** (e.g. `200g Chicken Breast, 150g White Rice`), those values are used as ground truth
 - If the user provides a **photo only**, Gemini estimates portion size from plate/cutlery scale
 - Considers **cooking methods** (oil sheen → fried, matte → grilled/boiled)
 - Returns structured JSON: `dish_name`, `total_calories`, `macros`, `confidence_score`, `detailed_analysis`
+
+**Nutrition Label Reader** (`/api/analyze-label`):
+- Reads all columns on a nutrition label (per 100g, per serving, per pack)
+- Identifies the **individual serving** (1 cookie, 1 bar) — not per 100g or the full pack
+- Returns per-serving and per-100g values for user verification
+- Supports optional context (e.g. "pack of 4 cookies") for better accuracy
 
 ---
 
