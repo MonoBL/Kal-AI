@@ -128,7 +128,7 @@ export default function ProfilePage() {
         {/* Version info */}
         <div className="pt-4 pb-2 text-center">
           <p className="text-xs text-[#8E8E93] leading-relaxed">
-            Kal AI v0.1.0<br />
+            Kal AI v{process.env.NEXT_PUBLIC_APP_VERSION || "0.2.0"}<br />
             Build: {process.env.NEXT_PUBLIC_BUILD_ID || "dev"}<br />
             {process.env.NEXT_PUBLIC_BUILD_DATE
               ? new Date(process.env.NEXT_PUBLIC_BUILD_DATE).toLocaleDateString(
