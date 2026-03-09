@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { LanguageProvider } from "@/context/LanguageContext";
 import FeedbackWidget from "@/components/FeedbackWidget";
 import FloatingActions from "@/components/FloatingActions";
+import InstallPrompt from "@/components/InstallPrompt";
 
 export const metadata: Metadata = {
   title: "Kal AI",
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {children}
               <FloatingActions />
               <FeedbackWidget />
+              <InstallPrompt />
             </LanguageProvider>
           </AuthProvider>
         </div>
