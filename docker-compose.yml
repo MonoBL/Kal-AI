@@ -4,9 +4,10 @@ services:
     container_name: kal-ai
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "5050:5050"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - PORT=5050
 
   watchtower:
     image: containrrr/watchtower
