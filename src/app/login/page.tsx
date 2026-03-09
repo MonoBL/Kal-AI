@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { useLang } from "@/context/LanguageContext";
 
@@ -61,11 +62,15 @@ export default function LoginPage() {
       <div className="flex-1 flex flex-col items-center justify-center px-8">
         {/* Logo */}
         <div className="mb-8 text-center">
-          <div className="w-24 h-24 rounded-[28px] bg-[#007AFF] flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-white text-4xl font-bold">K</span>
-          </div>
+          <Image
+            src="/plate-logo.svg"
+            alt="Kal AI"
+            width={160}
+            height={160}
+            className="mx-auto mb-2 drop-shadow-lg"
+            priority
+          />
           <h1 className="text-3xl font-bold text-gray-900">{t.appName}</h1>
-          <p className="text-[#8E8E93] mt-1 text-base">Smart Calorie Tracking</p>
         </div>
 
         <div className="w-full max-w-sm space-y-4">

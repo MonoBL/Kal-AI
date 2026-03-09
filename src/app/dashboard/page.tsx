@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { supabase, Meal } from "@/lib/supabase";
@@ -126,7 +127,10 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[#F2F2F7]" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Header */}
       <div className="bg-white px-4 pt-3 pb-3 flex items-center justify-between border-b border-gray-100">
-        <h1 className="text-2xl font-bold text-gray-900">{t.appName}</h1>
+        <div className="flex items-center gap-2">
+          <Image src="/plate-logo.svg" alt="Kal AI" width={36} height={36} />
+          <h1 className="text-2xl font-bold text-gray-900">{t.appName}</h1>
+        </div>
         <button
           onClick={() => setLang(lang === "en" ? "pt" : "en")}
           className="text-[#007AFF] text-sm font-semibold px-3 py-1.5 rounded-full bg-[#F2F2F7]"

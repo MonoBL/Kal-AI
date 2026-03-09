@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <!-- Plate shadow -->
+  <ellipse cx="152" cy="155" rx="130" ry="130" fill="#E8E8E8" opacity="0.5"/>
+
+  <!-- Plate outer rim -->
+  <circle cx="150" cy="150" r="140" fill="#F8F8F8" stroke="#E0E0E0" stroke-width="1"/>
+
+  <!-- Plate rim highlight (gives 3D effect) -->
+  <circle cx="150" cy="150" r="140" fill="url(#plateGrad)" />
+
+  <!-- Plate inner rim -->
+  <circle cx="150" cy="150" r="115" fill="#FFFFFF" stroke="#EFEFEF" stroke-width="0.5"/>
+
+  <!-- Plate rim ridges (subtle lines around the edge) -->
+  <g opacity="0.15" stroke="#999" stroke-width="0.8">
+    <line x1="150" y1="10" x2="150" y2="35" />
+    <line x1="185" y1="12" x2="180" y2="37" />
+    <line x1="218" y1="20" x2="208" y2="43" />
+    <line x1="247" y1="35" x2="233" y2="55" />
+    <line x1="270" y1="56" x2="253" y2="73" />
+    <line x1="286" y1="82" x2="267" y2="95" />
+    <line x1="293" y1="115" x2="273" y2="120" />
+    <line x1="290" y1="150" x2="265" y2="150" />
+    <line x1="293" y1="185" x2="273" y2="180" />
+    <line x1="286" y1="218" x2="267" y2="205" />
+    <line x1="270" y1="244" x2="253" y2="227" />
+    <line x1="247" y1="265" x2="233" y2="245" />
+    <line x1="218" y1="280" x2="208" y2="257" />
+    <line x1="185" y1="288" x2="180" y2="263" />
+    <line x1="150" y1="290" x2="150" y2="265" />
+    <line x1="115" y1="288" x2="120" y2="263" />
+    <line x1="82" y1="280" x2="92" y2="257" />
+    <line x1="53" y1="265" x2="67" y2="245" />
+    <line x1="30" y1="244" x2="47" y2="227" />
+    <line x1="14" y1="218" x2="33" y2="205" />
+    <line x1="7" y1="185" x2="27" y2="180" />
+    <line x1="10" y1="150" x2="35" y2="150" />
+    <line x1="7" y1="115" x2="27" y2="120" />
+    <line x1="14" y1="82" x2="33" y2="95" />
+    <line x1="30" y1="56" x2="47" y2="73" />
+    <line x1="53" y1="35" x2="67" y2="55" />
+    <line x1="82" y1="20" x2="92" y2="43" />
+    <line x1="115" y1="12" x2="120" y2="37" />
+  </g>
+
+  <!-- Inner plate surface -->
+  <circle cx="150" cy="150" r="100" fill="url(#innerPlateGrad)"/>
+
+  <!-- Text: "KAL" -->
+  <text x="150" y="138" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="52" font-weight="bold" fill="#1A1A1A" letter-spacing="6">KAL</text>
+
+  <!-- Text: "AI" smaller below -->
+  <text x="150" y="175" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="30" font-weight="bold" fill="#007AFF" letter-spacing="4">AI</text>
+
+  <!-- Subtle tagline -->
+  <text x="150" y="196" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#999" letter-spacing="3" text-transform="uppercase">SMART CALORIE TRACKING</text>
+
+  <defs>
+    <!-- Plate gradient for 3D effect -->
+    <radialGradient id="plateGrad" cx="40%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8"/>
+      <stop offset="60%" stop-color="#F5F5F5" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#E8E8E8" stop-opacity="0.6"/>
+    </radialGradient>
+
+    <!-- Inner plate gradient -->
+    <radialGradient id="innerPlateGrad" cx="45%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FAFAFA"/>
+    </radialGradient>
+  </defs>
+</svg>
