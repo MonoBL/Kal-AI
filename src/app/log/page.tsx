@@ -354,7 +354,8 @@ export default function LogPage() {
           };
         } else {
           // API lookup failed, fall back to Gemini data
-          dbg(`Nutrition lookup FAILED (HTTP ${lookupRes.status})`);
+          const errBody = await lookupRes.text().catch(() => "");
+          dbg(`Nutrition lookup FAILED (HTTP ${lookupRes.status}): ${errBody.slice(0, 200)}`);
           verifiedResult = {
             dish_name: geminiData.dish_name,
             total_calories: geminiData.total_calories,

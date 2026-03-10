@@ -277,7 +277,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No foods provided" }, { status: 400 });
     }
 
-    const token = await getFatSecretToken();
+    let token: string | null = null;
+    try {
+      token = await getFatSecretToken();
+    } catch (tokenErr) {
+      console.error("[nutrition-lookup] FatSecret token failed:", tokenErr);
+    }
     const results: FoodItemResult[] = [];
 
     for (const food of foods) {
@@ -285,7 +290,7 @@ export async function POST(req: NextRequest) {
 
       // Query ALL sources in parallel
       const [fsResult, offResult] = await Promise.all([
-        fetchFatSecret(food.name, token),
+        token ? fetchFatSecret(food.name, token) : Promise.resolve(null),
         fetchOpenFoodFacts(food.name),
       ]);
 
