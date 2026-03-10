@@ -200,6 +200,7 @@ export default function LogPage() {
   const [error, setError] = useState("");
   const [mealType, setMealType] = useState<MealType>("lunch");
   const [mealDate, setMealDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [userHint, setUserHint] = useState("");
 
   const addItem = () => {
     setItems(prev => [...prev, { id: nextId++, catIdx: 1, foodIdx: 0, grams: "" }]);
@@ -252,7 +253,11 @@ export default function LogPage() {
     try {
       // ── Step 1: Gemini identifies foods ──────────────────────────────────
       const fd = new FormData();
-      if (!skipQuantities && description) fd.append("description", description);
+      const fullDescription = [
+        !skipQuantities && description ? description : "",
+        userHint.trim() ? `(Extra context: ${userHint.trim()})` : "",
+      ].filter(Boolean).join(". ");
+      if (fullDescription) fd.append("description", fullDescription);
       fd.append("language", lang);
       if (image) fd.append("image", image);
 
@@ -524,6 +529,27 @@ export default function LogPage() {
         >
           {skipQuantities ? "✓ " : ""}{t.dontKnowQty}
         </button>
+
+        {/* AI Hint */}
+        <div className="card p-3">
+          <label className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-1.5 block">
+            {lang === "pt" ? "Dica para a IA (opcional)" : "Hint for AI (optional)"}
+          </label>
+          <input
+            type="text"
+            value={userHint}
+            onChange={e => setUserHint(e.target.value)}
+            placeholder={lang === "pt"
+              ? "ex. grelhado com azeite, cozido, frito..."
+              : "e.g. grilled with olive oil, boiled, fried..."}
+            className="w-full bg-[#F2F2F7] rounded-xl px-3 py-2.5 text-sm text-gray-800 outline-none border-0 placeholder:text-[#C7C7CC]"
+          />
+          <p className="text-[11px] text-[#8E8E93] mt-1.5 px-1">
+            {lang === "pt"
+              ? "Ajuda a IA com detalhes: método de cozinha, molhos, temperos..."
+              : "Help the AI with details: cooking method, sauces, seasoning..."}
+          </p>
+        </div>
 
         {/* Food Items Builder */}
         {!skipQuantities && (
