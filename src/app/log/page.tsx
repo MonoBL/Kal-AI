@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
@@ -206,6 +206,13 @@ export default function LogPage() {
   const [debugMode, setDebugMode] = useState(false);
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const isAdmin = user?.email === "nunom3ndes2005@gmail.com";
+
+  // Load debug mode from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined" && user?.email === "nunom3ndes2005@gmail.com") {
+      setDebugMode(localStorage.getItem("kal-debug") === "true");
+    }
+  }, [user]);
 
   const addItem = () => {
     setItems(prev => [...prev, { id: nextId++, catIdx: 1, foodIdx: 0, grams: "" }]);
@@ -483,16 +490,7 @@ export default function LogPage() {
       <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-gray-100">
         <button onClick={() => router.back()} className="text-[#007AFF] font-medium text-base">‹ Back</button>
         <h1 className="font-semibold text-base">{t.addMeal}</h1>
-        {isAdmin ? (
-          <button
-            onClick={() => setDebugMode(d => !d)}
-            className={`text-xs font-mono px-2 py-1 rounded-lg ${debugMode ? "bg-red-100 text-red-600" : "text-[#8E8E93]"}`}
-          >
-            {debugMode ? "DBG ON" : "DBG"}
-          </button>
-        ) : (
-          <div className="w-14" />
-        )}
+        <div className="w-14" />
       </div>
 
       <div className="px-4 py-4 pb-32 space-y-3">

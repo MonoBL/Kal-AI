@@ -6,6 +6,8 @@ import { useLang } from "@/context/LanguageContext";
 import { supabase } from "@/lib/supabase";
 import BottomNav from "@/components/BottomNav";
 
+const ADMIN_EMAIL = "nunom3ndes2005@gmail.com";
+
 export default function ProfilePage() {
   const { user, profile, signOut, refreshProfile } = useAuth();
   const { t, lang, setLang } = useLang();
@@ -14,6 +16,15 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [debugMode, setDebugMode] = useState(false);
+  const isAdmin = user?.email === ADMIN_EMAIL;
+
+  // Load debug mode from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setDebugMode(localStorage.getItem("kal-debug") === "true");
+    }
+  }, []);
 
   // Sync goal input when profile loads from Supabase
   useEffect(() => {
@@ -99,7 +110,7 @@ export default function ProfilePage() {
           </div>
 
           {/* Language */}
-          <div className="px-4 py-3">
+          <div className={`px-4 py-3 ${isAdmin ? "border-b border-gray-50" : ""}`}>
             <div className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-2">{t.language}</div>
             <div className="flex gap-2">
               {(["en", "pt"] as const).map(l => (
@@ -115,6 +126,31 @@ export default function ProfilePage() {
               ))}
             </div>
           </div>
+
+          {/* Debug Mode (admin only) */}
+          {isAdmin && (
+            <div className="px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide">Debug Mode</div>
+                  <p className="text-[10px] text-[#8E8E93] mt-0.5">{lang === "pt" ? "Mostra logs de API na análise" : "Show API logs during analysis"}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !debugMode;
+                    setDebugMode(next);
+                    localStorage.setItem("kal-debug", String(next));
+                  }}
+                  className={`relative w-12 h-7 rounded-full transition-colors ${debugMode ? "bg-[#34C759]" : "bg-[#E5E5EA]"}`}
+                >
+                  <div
+                    className="absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform"
+                    style={{ left: debugMode ? "calc(100% - 26px)" : "2px" }}
+                  />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sign Out */}
