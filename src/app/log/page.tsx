@@ -151,17 +151,32 @@ const FOOD_DB: CategoryEntry[] = [
   },
 ];
 
-// catIdx = index into FOOD_DB, foodIdx = index into that category's foods
 type FoodItem = { id: number; catIdx: number; foodIdx: number; grams: string };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+type NutritionItem = {
+  name: string;
+  weight_g: number;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  per_100g: { calories: number; protein: number; carbs: number; fats: number };
+  source: "fatsecret" | "openfoodfacts" | "gemini_estimate";
+  matched_name?: string;
+};
+
 type AnalysisResult = {
   dish_name: string;
   total_calories: number;
   macros: { protein: number; carbs: number; fats: number };
   confidence_score: number;
   detailed_analysis: string;
+  items?: NutritionItem[];
+  data_source?: string;
 };
+
+type AnalysisStep = "idle" | "identifying" | "verifying" | "finalizing" | "done" | "error";
 
 let nextId = 1;
 
@@ -179,6 +194,7 @@ export default function LogPage() {
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState<AnalysisStep>("idle");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -205,7 +221,6 @@ export default function LogPage() {
     setItems(prev => prev.map(i => i.id === id ? { ...i, grams } : i));
   };
 
-  // Always send English food names to Gemini for best accuracy
   const buildDescription = () =>
     items
       .filter(i => i.grams && parseFloat(i.grams) > 0)
@@ -220,26 +235,116 @@ export default function LogPage() {
     setResult(null);
   }, []);
 
+  // ─── Multi-step analysis ────────────────────────────────────────────────────
   const handleAnalyze = async () => {
     const description = buildDescription();
     if (!image && !description && !skipQuantities) {
-      setError("Add a photo or enter at least one food item with grams");
+      setError(lang === "pt"
+        ? "Adiciona uma foto ou insere pelo menos um alimento com gramas"
+        : "Add a photo or enter at least one food item with grams");
       return;
     }
     setAnalyzing(true);
+    setAnalysisStep("identifying");
     setError("");
+    setResult(null);
+
     try {
+      // ── Step 1: Gemini identifies foods ──────────────────────────────────
       const fd = new FormData();
       if (!skipQuantities && description) fd.append("description", description);
       fd.append("language", lang);
       if (image) fd.append("image", image);
 
-      const res = await fetch("/api/analyze", { method: "POST", body: fd });
-      if (!res.ok) throw new Error("Analysis failed");
-      const data = await res.json();
-      setResult(data);
+      const geminiRes = await fetch("/api/analyze", { method: "POST", body: fd });
+      if (!geminiRes.ok) throw new Error("Gemini analysis failed");
+      const geminiData = await geminiRes.json();
+
+      // ── Step 2: Verify with nutrition APIs ───────────────────────────────
+      setAnalysisStep("verifying");
+
+      const foodsToLookup = geminiData.foods;
+      let verifiedResult: AnalysisResult;
+
+      if (foodsToLookup && foodsToLookup.length > 0) {
+        const lookupRes = await fetch("/api/nutrition-lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            foods: foodsToLookup.map((f: { name: string; weight_g: number }) => ({
+              name: f.name,
+              weight_g: f.weight_g,
+            })),
+            gemini_estimates: foodsToLookup,
+          }),
+        });
+
+        if (lookupRes.ok) {
+          const lookupData = await lookupRes.json();
+          const apiItems: NutritionItem[] = lookupData.items;
+          const apiTotals = lookupData.totals;
+
+          // Count how many items came from verified sources
+          const verifiedCount = apiItems.filter(
+            (i) => i.source !== "gemini_estimate"
+          ).length;
+          const totalCount = apiItems.length;
+
+          // Determine data source label
+          const sources = [...new Set(apiItems.map((i) => i.source))];
+          const dataSource = sources.includes("fatsecret") || sources.includes("openfoodfacts")
+            ? (lang === "pt" ? "Verificado por base de dados nutricional" : "Verified by nutrition database")
+            : (lang === "pt" ? "Estimativa IA" : "AI estimate");
+
+          // Adjust confidence based on verification
+          const baseConfidence = geminiData.confidence_score || 70;
+          const verifiedBonus = verifiedCount > 0 ? Math.min(15, (verifiedCount / totalCount) * 15) : 0;
+          const adjustedConfidence = Math.min(98, Math.round(baseConfidence + verifiedBonus));
+
+          verifiedResult = {
+            dish_name: geminiData.dish_name,
+            total_calories: apiTotals.calories,
+            macros: {
+              protein: Math.round(apiTotals.protein),
+              carbs: Math.round(apiTotals.carbs),
+              fats: Math.round(apiTotals.fats),
+            },
+            confidence_score: adjustedConfidence,
+            detailed_analysis: geminiData.detailed_analysis,
+            items: apiItems,
+            data_source: dataSource,
+          };
+        } else {
+          // API lookup failed, fall back to Gemini data
+          verifiedResult = {
+            dish_name: geminiData.dish_name,
+            total_calories: geminiData.total_calories,
+            macros: geminiData.macros,
+            confidence_score: geminiData.confidence_score,
+            detailed_analysis: geminiData.detailed_analysis,
+            data_source: lang === "pt" ? "Estimativa IA (Gemini)" : "AI estimate (Gemini)",
+          };
+        }
+      } else {
+        // No structured foods returned, use Gemini totals
+        verifiedResult = {
+          dish_name: geminiData.dish_name,
+          total_calories: geminiData.total_calories,
+          macros: geminiData.macros,
+          confidence_score: geminiData.confidence_score,
+          detailed_analysis: geminiData.detailed_analysis,
+          data_source: lang === "pt" ? "Estimativa IA (Gemini)" : "AI estimate (Gemini)",
+        };
+      }
+
+      // ── Step 3: Finalize ─────────────────────────────────────────────────
+      setAnalysisStep("finalizing");
+      await new Promise((r) => setTimeout(r, 400)); // brief pause for UX
+      setResult(verifiedResult);
+      setAnalysisStep("done");
     } catch {
-      setError("Analysis failed. Please try again.");
+      setError(lang === "pt" ? "Análise falhou. Tenta novamente." : "Analysis failed. Please try again.");
+      setAnalysisStep("error");
     } finally {
       setAnalyzing(false);
     }
@@ -272,12 +377,59 @@ export default function LogPage() {
       });
       router.push("/dashboard");
     } catch {
-      setError("Failed to save meal");
+      setError(lang === "pt" ? "Falha ao guardar refeição" : "Failed to save meal");
       setSaving(false);
     }
   };
 
   const selectClass = "w-full bg-[#F2F2F7] rounded-xl px-3 py-2 text-sm font-medium text-gray-800 outline-none appearance-none border-0";
+
+  // ─── Progress Steps Config ────────────────────────────────────────────────
+  const steps = [
+    {
+      key: "identifying" as const,
+      label: lang === "pt" ? "Identificando alimentos..." : "Identifying foods...",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-4 h-4">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+        </svg>
+      ),
+    },
+    {
+      key: "verifying" as const,
+      label: lang === "pt" ? "Verificando nutrição..." : "Verifying nutrition data...",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-4 h-4">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+        </svg>
+      ),
+    },
+    {
+      key: "finalizing" as const,
+      label: lang === "pt" ? "Finalizando..." : "Finalizing results...",
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-4 h-4">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+        </svg>
+      ),
+    },
+  ];
+
+  const stepOrder: AnalysisStep[] = ["identifying", "verifying", "finalizing"];
+  const currentStepIdx = stepOrder.indexOf(analysisStep);
+
+  // Source badge color
+  const sourceColor = (source: string) => {
+    if (source === "fatsecret") return "bg-green-100 text-green-700";
+    if (source === "openfoodfacts") return "bg-blue-100 text-blue-700";
+    return "bg-yellow-100 text-yellow-700";
+  };
+
+  const sourceLabel = (source: string) => {
+    if (source === "fatsecret") return "FatSecret";
+    if (source === "openfoodfacts") return "OpenFoodFacts";
+    return lang === "pt" ? "Estimativa IA" : "AI Estimate";
+  };
 
   return (
     <div className="min-h-screen bg-[#F2F2F7]" style={{ paddingTop: "env(safe-area-inset-top)" }}>
@@ -333,7 +485,6 @@ export default function LogPage() {
         {/* Date & Meal Type */}
         <div className="card p-3 space-y-3">
           <div className="flex gap-3">
-            {/* Date picker */}
             <div className="flex-1">
               <label className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-1 block">{t.mealDate}</label>
               <input
@@ -343,7 +494,6 @@ export default function LogPage() {
                 className="w-full bg-[#F2F2F7] rounded-xl px-3 py-2.5 text-sm font-medium text-gray-800 outline-none border-0"
               />
             </div>
-            {/* Meal type */}
             <div className="flex-1">
               <label className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide mb-1 block">{t.mealType}</label>
               <div className="relative">
@@ -396,7 +546,6 @@ export default function LogPage() {
                     )}
                   </div>
 
-                  {/* Category */}
                   <div className="relative">
                     <select
                       value={item.catIdx}
@@ -412,7 +561,6 @@ export default function LogPage() {
                     </svg>
                   </div>
 
-                  {/* Food + Grams */}
                   <div className="flex gap-2 items-center">
                     <div className="relative flex-1">
                       <select
@@ -442,7 +590,6 @@ export default function LogPage() {
                     </div>
                   </div>
 
-                  {/* Preview label */}
                   {item.grams && parseFloat(item.grams) > 0 && (
                     <p className="text-xs text-[#007AFF] font-medium pl-1">
                       → {item.grams}g {lang === "pt" ? food.pt : food.en}
@@ -465,26 +612,79 @@ export default function LogPage() {
           <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl text-center">{error}</div>
         )}
 
+        {/* ─── Progress Bar (during analysis) ─────────────────────────────── */}
+        {analyzing && (
+          <div className="card p-4 space-y-3">
+            {/* Overall progress bar */}
+            <div className="w-full h-2 bg-[#F2F2F7] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#007AFF] rounded-full transition-all duration-700 ease-out"
+                style={{
+                  width:
+                    analysisStep === "identifying" ? "33%"
+                    : analysisStep === "verifying" ? "66%"
+                    : analysisStep === "finalizing" ? "90%"
+                    : "100%",
+                }}
+              />
+            </div>
+
+            {/* Step indicators */}
+            <div className="space-y-2">
+              {steps.map((step, idx) => {
+                const isActive = step.key === analysisStep;
+                const isDone = currentStepIdx > idx;
+                return (
+                  <div
+                    key={step.key}
+                    className={`flex items-center gap-3 py-1.5 px-2 rounded-xl transition-all duration-300 ${
+                      isActive ? "bg-[#007AFF]/10" : ""
+                    }`}
+                  >
+                    {/* Step icon */}
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
+                      isDone ? "bg-[#34C759] text-white"
+                      : isActive ? "bg-[#007AFF] text-white"
+                      : "bg-[#E5E5EA] text-[#8E8E93]"
+                    }`}>
+                      {isDone ? (
+                        <svg viewBox="0 0 24 24" fill="none" strokeWidth="3" stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      ) : isActive ? (
+                        <div className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      ) : (
+                        step.icon
+                      )}
+                    </div>
+                    {/* Step label */}
+                    <span className={`text-sm font-medium transition-colors ${
+                      isDone ? "text-[#34C759]"
+                      : isActive ? "text-[#007AFF] font-semibold"
+                      : "text-[#8E8E93]"
+                    }`}>
+                      {isDone
+                        ? (lang === "pt" ? "Concluído" : "Done")
+                        : step.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Analyze Button */}
-        {!result && (
+        {!result && !analyzing && (
           <button onClick={handleAnalyze} disabled={analyzing} className="ios-button flex items-center justify-center gap-2">
-            {analyzing ? (
-              <>
-                <div className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                {t.analyzing}
-              </>
-            ) : (
-              <>
-                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-5 h-5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                </svg>
-                {t.analyze}
-              </>
-            )}
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+            </svg>
+            {t.analyze}
           </button>
         )}
 
-        {/* Result */}
+        {/* ─── Result ──────────────────────────────────────────────────────── */}
         {result && (
           <div className="card p-5 space-y-4">
             <div className="flex items-start justify-between">
@@ -503,6 +703,17 @@ export default function LogPage() {
               </div>
             </div>
 
+            {/* Data source badge */}
+            {result.data_source && (
+              <div className="flex items-center gap-1.5">
+                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-3.5 h-3.5 text-[#34C759]">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                </svg>
+                <span className="text-xs font-medium text-[#34C759]">{result.data_source}</span>
+              </div>
+            )}
+
+            {/* Macros */}
             <div className="flex bg-[#F2F2F7] rounded-2xl p-3">
               {[
                 { label: t.protein, val: result.macros.protein, color: "text-[#007AFF]" },
@@ -516,14 +727,44 @@ export default function LogPage() {
               ))}
             </div>
 
+            {/* Per-item breakdown */}
+            {result.items && result.items.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-[#8E8E93] uppercase tracking-wide">
+                  {lang === "pt" ? "Detalhe por alimento" : "Per-item breakdown"}
+                </p>
+                {result.items.map((item, i) => (
+                  <div key={i} className="bg-[#F2F2F7] rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-900 capitalize">{item.name}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${sourceColor(item.source)}`}>
+                          {sourceLabel(item.source)}
+                        </span>
+                      </div>
+                      <span className="text-xs text-[#8E8E93]">{item.weight_g}g</span>
+                    </div>
+                    <div className="flex gap-3 text-xs">
+                      <span className="text-gray-600"><span className="font-semibold">{item.calories}</span> kcal</span>
+                      <span className="text-[#007AFF]">P: {item.protein}g</span>
+                      <span className="text-[#FF9500]">C: {item.carbs}g</span>
+                      <span className="text-[#FF3B30]">F: {item.fats}g</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Detailed analysis */}
             <div className="bg-[#F2F2F7] rounded-2xl p-3">
               <p className="text-xs font-semibold text-[#8E8E93] mb-1">{t.detailedAnalysis}</p>
               <p className="text-sm text-gray-700 leading-relaxed">{result.detailed_analysis}</p>
             </div>
 
+            {/* Actions */}
             <div className="flex gap-3">
               <button
-                onClick={() => { setResult(null); setImage(null); setImagePreview(null); }}
+                onClick={() => { setResult(null); setImage(null); setImagePreview(null); setAnalysisStep("idle"); }}
                 className="flex-1 py-3 rounded-2xl bg-[#F2F2F7] text-[#8E8E93] font-semibold text-sm"
               >
                 {t.cancel}

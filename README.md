@@ -1,12 +1,13 @@
 # Kal AI 🥗
 
-> **Smart calorie tracking powered by Google Gemini AI**
+> **Smart calorie tracking powered by AI + verified nutrition databases**
 > A PWA built for iPhone — designed to feel like a native Apple Health app.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=flat-square&logo=tailwindcss)
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase)
 ![Gemini](https://img.shields.io/badge/Google-Gemini%202.5%20Flash-4285F4?style=flat-square&logo=google)
+![FatSecret](https://img.shields.io/badge/FatSecret-API-FF6600?style=flat-square)
 ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8?style=flat-square)
 
 ---
@@ -15,7 +16,10 @@
 
 | Feature | Description |
 |---|---|
-| 📸 **AI Meal Analysis** | Take a photo of your food — Gemini 2.5 Flash identifies it, estimates portion size, and returns calories + macros |
+| 📸 **AI Meal Analysis** | Take a photo of your food — Gemini 2.5 Flash identifies items and portions, then FatSecret + OpenFoodFacts verify the real nutritional values |
+| 🔍 **Multi-source Verification** | Nutrition data cross-referenced: FatSecret API → OpenFoodFacts → AI estimate fallback |
+| 📊 **Per-item Breakdown** | See calories and macros for each ingredient with source badges (FatSecret, OpenFoodFacts, AI Estimate) |
+| ⏳ **Live Progress Bar** | 3-step animated progress during analysis: Identifying → Verifying → Finalizing |
 | 🥩 **Ingredient Builder** | Select ingredients from categorized dropdowns (grains, meat, fish, vegetables, etc.) with gram inputs |
 | 🍪 **Common Snacks** | Save packaged snacks by photographing the nutrition label — AI reads per-serving macros. Quick-log later with a tap + quantity picker |
 | 📊 **Daily Dashboard** | Circular calorie ring, macro progress bars, and a live meal list |
@@ -42,14 +46,15 @@ src/
 │   ├── page.tsx                    # Auth redirect root
 │   ├── login/page.tsx              # Login + Sign Up + Google OAuth
 │   ├── dashboard/page.tsx          # Today / Weekly / Monthly tabs
-│   ├── log/page.tsx                # Meal logging (camera + ingredient builder)
+│   ├── log/page.tsx                # Meal logging (camera + ingredient builder + progress bar)
 │   ├── snacks/page.tsx             # Common snacks manager + quick-log
 │   ├── history/page.tsx            # Meal history grouped by date
 │   ├── profile/page.tsx            # Settings, calorie goal, language, version info
 │   └── api/
-│       ├── analyze/route.ts        # Gemini meal analysis endpoint
+│       ├── analyze/route.ts        # Gemini meal analysis (identifies foods + portions)
 │       ├── analyze-label/route.ts  # Gemini nutrition label reader
-│       └── feedback/route.ts       # Bug reports & feature requests
+│       ├── nutrition-lookup/route.ts # FatSecret + OpenFoodFacts verification
+│       └── feedback/route.ts       # Bug reports & feature requests (admin CRUD)
 ├── components/
 │   ├── BottomNav.tsx               # iOS-style tab bar (5 tabs)
 │   ├── CircularProgress.tsx        # SVG calorie ring
@@ -82,11 +87,15 @@ Create a `.env.local` file in the root:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 GEMINI_API_KEY=your_gemini_api_key
+FATSECRET_CLIENT_ID=your_fatsecret_client_id
+FATSECRET_CLIENT_SECRET=your_fatsecret_client_secret
 ```
 
 - **Supabase** → [supabase.com](https://supabase.com) — create a free project
 - **Gemini** → [aistudio.google.com](https://aistudio.google.com) — get a free API key
+- **FatSecret** → [platform.fatsecret.com](https://platform.fatsecret.com) — register for a free API key
 
 ### 3. Set up Supabase database
 
@@ -115,11 +124,11 @@ CREATE TABLE meals (
   protein int4,
   carbs int4,
   fats int4,
-  image_url text
+  image_url text,
+  meal_type text
 );
 ALTER TABLE meals ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "manage own meals" ON meals FOR ALL USING (auth.uid() = user_id);
-```
 
 -- Common snacks table
 CREATE TABLE common_snacks (
@@ -147,15 +156,16 @@ CREATE TABLE feedback (
   type text CHECK (type IN ('bug', 'feature')),
   description text NOT NULL,
   screenshot_urls text[] DEFAULT '{}',
-  status text DEFAULT 'open',
+  status text DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'closed')),
   created_at timestamptz DEFAULT now()
 );
 ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "insert own feedback" ON feedback FOR INSERT WITH CHECK (auth.uid() = user_id);
 ```
 
-Then create a **Storage bucket** named `meal-images` (set to **public**).
-Also create a **Storage bucket** named `feedback-screenshots` (set to **public**).
+Then create two **Storage buckets** (both set to **public**):
+- `meal-images`
+- `feedback-screenshots`
 
 ### 4. Run locally
 
@@ -169,15 +179,36 @@ npm start       # production server
 
 ---
 
-## 🤖 AI Strategy
+## 🤖 AI + API Strategy
 
-**Meal Analysis** (`/api/analyze`):
-- If the user provides **grams** (e.g. `200g Chicken Breast, 150g White Rice`), those values are used as ground truth
-- If the user provides a **photo only**, Gemini estimates portion size from plate/cutlery scale
-- Considers **cooking methods** (oil sheen → fried, matte → grilled/boiled)
-- Returns structured JSON: `dish_name`, `total_calories`, `macros`, `confidence_score`, `detailed_analysis`
+### Meal Analysis Flow
 
-**Nutrition Label Reader** (`/api/analyze-label`):
+```
+┌──────────────┐     ┌──────────────────┐     ┌─────────────┐
+│  User Input  │ ──► │  Gemini 2.5 Flash │ ──► │  FatSecret  │
+│  Photo/Items │     │  Identifies foods  │     │  Verifies   │
+│  + Grams     │     │  + portions        │     │  nutrition  │
+└──────────────┘     └──────────────────┘     └──────┬──────┘
+                                                      │ fallback
+                                               ┌──────▼──────┐
+                                               │ OpenFoodFacts│
+                                               │  (free DB)   │
+                                               └──────┬──────┘
+                                                      │ fallback
+                                               ┌──────▼──────┐
+                                               │ Gemini Est.  │
+                                               │ (AI backup)  │
+                                               └─────────────┘
+```
+
+1. **Step 1 — Gemini Vision**: Identifies individual food items, estimates portions from photo/description
+2. **Step 2 — FatSecret API**: Looks up each food for verified per-100g nutritional data
+3. **Step 3 — OpenFoodFacts**: Free fallback if FatSecret has no match
+4. **Step 4 — Gemini Estimate**: Last resort using AI training data
+
+Each item in the result shows a **source badge** so the user knows where the data came from.
+
+### Nutrition Label Reader (`/api/analyze-label`)
 - Reads all columns on a nutrition label (per 100g, per serving, per pack)
 - Identifies the **individual serving** (1 cookie, 1 bar) — not per 100g or the full pack
 - Returns per-serving and per-100g values for user verification
@@ -192,7 +223,8 @@ npm start       # production server
 | Framework | Next.js 16 (App Router) |
 | Styling | Tailwind CSS v4 |
 | Database & Auth | Supabase (PostgreSQL + Auth) |
-| AI | Google Gemini 2.5 Flash |
+| AI Vision | Google Gemini 2.5 Flash |
+| Nutrition Data | FatSecret API + OpenFoodFacts |
 | Charts | Recharts |
 | PWA | next-pwa |
 | Language | TypeScript |
