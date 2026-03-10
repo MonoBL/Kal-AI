@@ -29,13 +29,29 @@ async function getFatSecretToken(): Promise<string> {
 
 // ─── FatSecret food search ──────────────────────────────────────────────────
 async function searchFood(query: string, token: string) {
-  const url = `https://platform.fatsecret.com/rest/server.api?method=foods.search&search_expression=${encodeURIComponent(query)}&format=json&max_results=3`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.foods?.food || null;
+  try {
+    const res = await fetch("https://platform.fatsecret.com/rest/server.api", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `method=foods.search&search_expression=${encodeURIComponent(query)}&format=json&max_results=3`,
+    });
+    if (!res.ok) {
+      console.error("FatSecret search error:", res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    if (data?.error) {
+      console.error("FatSecret API error:", data.error);
+      return null;
+    }
+    return data?.foods?.food || null;
+  } catch (err) {
+    console.error("FatSecret search exception:", err);
+    return null;
+  }
 }
 
 // ─── OpenFoodFacts fallback search ──────────────────────────────────────────
@@ -159,20 +175,32 @@ export async function POST(req: NextRequest) {
       let matchedName: string | undefined;
 
       // 1. Try FatSecret
+      console.log(`[nutrition-lookup] Searching FatSecret for: "${food.name}"`);
       const fsResults = await searchFood(food.name, token);
       if (fsResults) {
         const fsFood = Array.isArray(fsResults) ? fsResults[0] : fsResults;
         nutrition = parseFatSecretNutrition(fsFood);
         matchedName = (fsFood.food_name as string) || undefined;
+        if (nutrition) {
+          console.log(`[nutrition-lookup] FatSecret match: "${matchedName}" → ${nutrition.calories_per_100g} kcal/100g`);
+        }
       }
 
       // 2. Fallback to OpenFoodFacts
       if (!nutrition) {
+        console.log(`[nutrition-lookup] FatSecret miss, trying OpenFoodFacts for: "${food.name}"`);
         const offResults = await searchOpenFoodFacts(food.name);
         if (offResults && offResults.length > 0) {
           nutrition = parseOpenFoodFactsNutrition(offResults[0]);
           matchedName = (offResults[0].product_name as string) || undefined;
+          if (nutrition) {
+            console.log(`[nutrition-lookup] OpenFoodFacts match: "${matchedName}" → ${nutrition.calories_per_100g} kcal/100g`);
+          }
         }
+      }
+
+      if (!nutrition) {
+        console.log(`[nutrition-lookup] No API match for "${food.name}", using Gemini estimate`);
       }
 
       // 3. Fallback to Gemini estimate
