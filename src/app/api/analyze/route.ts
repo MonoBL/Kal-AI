@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
 
     const userPrompt = `Analyze this meal${description ? ` with user-provided details: "${description}"` : ""}.
 Language for detailed_analysis: ${language === "pt" ? "Portuguese (PT)" : "English (EN)"}.
-IMPORTANT: Break down into individual food items in the "foods" array. Use simple English food names (e.g. "chicken breast" not "grilled chicken breast with herbs").
+IMPORTANT: Break down into individual food items in the "foods" array. Use simple English food names for API lookup.
+CRITICAL: Always specify "cooked" for cooked foods (e.g. "cooked white rice" not "white rice", "cooked pasta" not "pasta", "cooked chicken breast" not "chicken breast"). This is essential because nutrition databases default to RAW values which are very different from cooked values. Raw rice is ~350kcal/100g but cooked rice is ~130kcal/100g.
 Return ONLY valid JSON.`;
 
     let result;

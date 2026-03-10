@@ -223,7 +223,18 @@ function pickBestNutrition(
           all_sources: allSources,
         };
       }
-      // Disagree — trust the DB
+      // Disagree — check HOW MUCH they disagree
+      // If DB is >2x Gemini, DB likely has raw/dry values → trust Gemini
+      const ratio = db.calories / geminiSource.calories;
+      if (ratio > 2.0) {
+        console.log(`[consensus] "${foodName}": ${db.source} (${db.calories}) is ${ratio.toFixed(1)}x Gemini (${geminiSource.calories}) → likely raw/dry data, trusting Gemini`);
+        return {
+          ...geminiSource,
+          sources_used: ["gemini_estimate", db.source],
+          all_sources: allSources,
+        };
+      }
+      // DB is not wildly off — trust the DB
       console.log(`[consensus] "${foodName}": ${db.source} (${db.calories}) & Gemini (${geminiSource.calories}) disagree → trusting DB`);
     }
     return {
