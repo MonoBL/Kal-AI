@@ -9,7 +9,7 @@ import BottomNav from "@/components/BottomNav";
 import Image from "next/image";
 
 // ─── Food Database (key=English for Gemini, label=display name) ───────────────
-type FoodEntry = { en: string; pt: string };
+type FoodEntry = { en: string; pt: string; unitGrams?: number; unitLabel?: { en: string; pt: string } };
 type CategoryEntry = { en: string; pt: string; foods: FoodEntry[] };
 
 const FOOD_DB: CategoryEntry[] = [
@@ -91,7 +91,10 @@ const FOOD_DB: CategoryEntry[] = [
   {
     en: "Dairy & Eggs", pt: "Laticínios e Ovos",
     foods: [
-      { en: "Egg (whole)", pt: "Ovo (inteiro)" },
+      { en: "Boiled Egg", pt: "Ovo Cozido", unitGrams: 50, unitLabel: { en: "unit(s)", pt: "unid." } },
+      { en: "Fried Egg", pt: "Ovo Estrelado", unitGrams: 50, unitLabel: { en: "unit(s)", pt: "unid." } },
+      { en: "Scrambled Egg", pt: "Ovo Mexido", unitGrams: 61, unitLabel: { en: "unit(s)", pt: "unid." } },
+      { en: "Poached Egg", pt: "Ovo Escalfado", unitGrams: 50, unitLabel: { en: "unit(s)", pt: "unid." } },
       { en: "Egg White", pt: "Clara de Ovo" },
       { en: "Milk (whole)", pt: "Leite (gordo)" },
       { en: "Milk (skimmed)", pt: "Leite (magro)" },
@@ -237,7 +240,15 @@ export default function LogPage() {
   const buildDescription = () =>
     items
       .filter(i => i.grams && parseFloat(i.grams) > 0)
-      .map(i => `${i.grams}g ${FOOD_DB[i.catIdx].foods[i.foodIdx].en}`)
+      .map(i => {
+        const food = FOOD_DB[i.catIdx].foods[i.foodIdx];
+        if (food.unitGrams) {
+          const units = parseFloat(i.grams);
+          const totalG = Math.round(units * food.unitGrams);
+          return `${units} ${food.en} (${totalG}g)`;
+        }
+        return `${i.grams}g ${food.en}`;
+      })
       .join(", ");
 
   const handleImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -277,7 +288,11 @@ export default function LogPage() {
       if (image) fd.append("image", image);
 
       const geminiRes = await fetch("/api/analyze", { method: "POST", body: fd });
-      if (!geminiRes.ok) { dbg(`Gemini FAILED (HTTP ${geminiRes.status})`); throw new Error("Gemini analysis failed"); }
+      if (!geminiRes.ok) {
+        const errBody = await geminiRes.text().catch(() => "");
+        dbg(`Gemini FAILED (HTTP ${geminiRes.status}): ${errBody.slice(0, 300)}`);
+        throw new Error("Gemini analysis failed");
+      }
       const geminiData = await geminiRes.json();
       dbg(`Gemini OK: "${geminiData.dish_name}", ${geminiData.foods?.length || 0} foods identified`);
       if (geminiData.foods) {
@@ -653,20 +668,25 @@ export default function LogPage() {
                     <div className="flex items-center bg-[#F2F2F7] rounded-xl px-3 py-2 w-24 gap-1">
                       <input
                         type="number"
-                        placeholder="100"
+                        placeholder={food.unitGrams ? "1" : "100"}
                         value={item.grams}
                         onChange={e => updateGrams(item.id, e.target.value)}
                         className="w-full bg-transparent text-sm font-bold text-gray-900 outline-none"
-                        min={1}
-                        max={5000}
+                        min={food.unitGrams ? 1 : 1}
+                        max={food.unitGrams ? 50 : 5000}
+                        step={food.unitGrams ? 1 : undefined}
                       />
-                      <span className="text-xs text-[#8E8E93] font-medium">g</span>
+                      <span className="text-xs text-[#8E8E93] font-medium whitespace-nowrap">
+                        {food.unitGrams ? (lang === "pt" ? food.unitLabel?.pt || "unid." : food.unitLabel?.en || "unit(s)") : "g"}
+                      </span>
                     </div>
                   </div>
 
                   {item.grams && parseFloat(item.grams) > 0 && (
                     <p className="text-xs text-[#007AFF] font-medium pl-1">
-                      → {item.grams}g {lang === "pt" ? food.pt : food.en}
+                      → {food.unitGrams
+                        ? `${item.grams}x ${lang === "pt" ? food.pt : food.en} (${Math.round(parseFloat(item.grams) * food.unitGrams)}g)`
+                        : `${item.grams}g ${lang === "pt" ? food.pt : food.en}`}
                     </p>
                   )}
                 </div>
@@ -683,7 +703,26 @@ export default function LogPage() {
         )}
 
         {error && (
-          <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl text-center">{error}</div>
+          <div className="space-y-2">
+            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl text-center">{error}</div>
+            {/* Debug panel on error */}
+            {debugMode && isAdmin && debugLog.length > 0 && (
+              <div className="bg-gray-900 rounded-xl p-3 space-y-0.5 overflow-x-auto">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">Debug Log</span>
+                  <button onClick={() => setDebugLog([])} className="text-[10px] text-gray-500">Clear</button>
+                </div>
+                {debugLog.map((line, i) => (
+                  <p key={i} className={`text-[10px] font-mono leading-tight ${
+                    line.includes("FAILED") || line.includes("ERROR") ? "text-red-400" :
+                    line.includes("OK") || line.includes("Verified") ? "text-green-400" :
+                    line.includes("Step") ? "text-yellow-300" :
+                    line.startsWith("  ") ? "text-gray-400" : "text-gray-300"
+                  }`}>{line}</p>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ─── Progress Bar (during analysis) ─────────────────────────────── */}
