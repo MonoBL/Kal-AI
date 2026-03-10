@@ -203,6 +203,9 @@ export default function LogPage() {
   const [mealType, setMealType] = useState<MealType>("lunch");
   const [mealDate, setMealDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [userHint, setUserHint] = useState("");
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const isAdmin = user?.email === "nunom3ndes2005@gmail.com";
 
   const addItem = () => {
     setItems(prev => [...prev, { id: nextId++, catIdx: 1, foodIdx: 0, grams: "" }]);
@@ -251,9 +254,12 @@ export default function LogPage() {
     setAnalysisStep("identifying");
     setError("");
     setResult(null);
+    const logs: string[] = [];
+    const dbg = (msg: string) => logs.push(`[${new Date().toLocaleTimeString()}] ${msg}`);
 
     try {
       // ── Step 1: Gemini identifies foods ──────────────────────────────────
+      dbg("Step 1: Sending to Gemini...");
       const fd = new FormData();
       const fullDescription = [
         !skipQuantities && description ? description : "",
@@ -264,11 +270,18 @@ export default function LogPage() {
       if (image) fd.append("image", image);
 
       const geminiRes = await fetch("/api/analyze", { method: "POST", body: fd });
-      if (!geminiRes.ok) throw new Error("Gemini analysis failed");
+      if (!geminiRes.ok) { dbg(`Gemini FAILED (HTTP ${geminiRes.status})`); throw new Error("Gemini analysis failed"); }
       const geminiData = await geminiRes.json();
+      dbg(`Gemini OK: "${geminiData.dish_name}", ${geminiData.foods?.length || 0} foods identified`);
+      if (geminiData.foods) {
+        geminiData.foods.forEach((f: { name: string; weight_g: number; calories: number }) => {
+          dbg(`  → ${f.name}: ${f.weight_g}g, ${f.calories} kcal (Gemini est.)`);
+        });
+      }
 
       // ── Step 2: Verify with nutrition APIs ───────────────────────────────
       setAnalysisStep("verifying");
+      dbg("Step 2: Verifying with FatSecret + OpenFoodFacts...");
 
       const foodsToLookup = geminiData.foods;
       let verifiedResult: AnalysisResult;
@@ -291,11 +304,23 @@ export default function LogPage() {
           const apiItems: NutritionItem[] = lookupData.items;
           const apiTotals = lookupData.totals;
 
+          dbg(`Nutrition lookup OK: ${apiItems.length} items returned`);
+          apiItems.forEach(item => {
+            const srcList = item.sources_used?.join(", ") || item.source;
+            dbg(`  → ${item.name}: ${item.calories} kcal (source: ${item.source}, used: [${srcList}])`);
+            if (item.all_sources && item.all_sources.length > 0) {
+              item.all_sources.forEach(s => {
+                dbg(`    · ${s.source}: ${s.calories} kcal/100g`);
+              });
+            }
+          });
+
           // Count how many items came from verified sources
           const verifiedCount = apiItems.filter(
             (i) => i.source !== "gemini_estimate"
           ).length;
           const totalCount = apiItems.length;
+          dbg(`Verified: ${verifiedCount}/${totalCount} items from DB sources`);
 
           // Determine data source label
           const sources = [...new Set(apiItems.map((i) => i.source))];
@@ -307,6 +332,7 @@ export default function LogPage() {
             : sources.includes("fatsecret") || sources.includes("openfoodfacts")
             ? (lang === "pt" ? "Verificado por base de dados nutricional" : "Verified by nutrition database")
             : (lang === "pt" ? "Estimativa IA" : "AI estimate");
+          dbg(`Data source label: "${dataSource}"`);
 
           // Adjust confidence based on verification
           const baseConfidence = geminiData.confidence_score || 70;
@@ -328,6 +354,7 @@ export default function LogPage() {
           };
         } else {
           // API lookup failed, fall back to Gemini data
+          dbg(`Nutrition lookup FAILED (HTTP ${lookupRes.status})`);
           verifiedResult = {
             dish_name: geminiData.dish_name,
             total_calories: geminiData.total_calories,
@@ -339,6 +366,7 @@ export default function LogPage() {
         }
       } else {
         // No structured foods returned, use Gemini totals
+        dbg("No structured foods from Gemini → using Gemini totals only");
         verifiedResult = {
           dish_name: geminiData.dish_name,
           total_calories: geminiData.total_calories,
@@ -351,10 +379,15 @@ export default function LogPage() {
 
       // ── Step 3: Finalize ─────────────────────────────────────────────────
       setAnalysisStep("finalizing");
+      dbg("Step 3: Finalizing...");
+      dbg(`Final: ${verifiedResult.total_calories} kcal, source: "${verifiedResult.data_source}"`);
       await new Promise((r) => setTimeout(r, 400)); // brief pause for UX
       setResult(verifiedResult);
       setAnalysisStep("done");
-    } catch {
+      setDebugLog(logs);
+    } catch (err) {
+      dbg(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+      setDebugLog(logs);
       setError(lang === "pt" ? "Análise falhou. Tenta novamente." : "Analysis failed. Please try again.");
       setAnalysisStep("error");
     } finally {
@@ -449,7 +482,16 @@ export default function LogPage() {
       <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-gray-100">
         <button onClick={() => router.back()} className="text-[#007AFF] font-medium text-base">‹ Back</button>
         <h1 className="font-semibold text-base">{t.addMeal}</h1>
-        <div className="w-14" />
+        {isAdmin ? (
+          <button
+            onClick={() => setDebugMode(d => !d)}
+            className={`text-xs font-mono px-2 py-1 rounded-lg ${debugMode ? "bg-red-100 text-red-600" : "text-[#8E8E93]"}`}
+          >
+            {debugMode ? "DBG ON" : "DBG"}
+          </button>
+        ) : (
+          <div className="w-14" />
+        )}
       </div>
 
       <div className="px-4 py-4 pb-32 space-y-3">
@@ -743,6 +785,24 @@ export default function LogPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                 </svg>
                 <span className="text-xs font-medium text-[#34C759]">{result.data_source}</span>
+              </div>
+            )}
+
+            {/* Debug panel */}
+            {debugMode && isAdmin && debugLog.length > 0 && (
+              <div className="bg-gray-900 rounded-xl p-3 space-y-0.5 overflow-x-auto">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">Debug Log</span>
+                  <button onClick={() => setDebugLog([])} className="text-[10px] text-gray-500">Clear</button>
+                </div>
+                {debugLog.map((line, i) => (
+                  <p key={i} className={`text-[10px] font-mono leading-tight ${
+                    line.includes("FAILED") || line.includes("ERROR") ? "text-red-400" :
+                    line.includes("OK") || line.includes("Verified") ? "text-green-400" :
+                    line.includes("Step") ? "text-yellow-300" :
+                    line.startsWith("  ") ? "text-gray-400" : "text-gray-300"
+                  }`}>{line}</p>
+                ))}
               </div>
             )}
 
