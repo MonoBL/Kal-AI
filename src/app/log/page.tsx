@@ -164,6 +164,8 @@ type NutritionItem = {
   per_100g: { calories: number; protein: number; carbs: number; fats: number };
   source: "fatsecret" | "openfoodfacts" | "gemini_estimate";
   matched_name?: string;
+  sources_used?: string[];
+  all_sources?: { source: string; calories: number }[];
 };
 
 type AnalysisResult = {
@@ -297,7 +299,12 @@ export default function LogPage() {
 
           // Determine data source label
           const sources = [...new Set(apiItems.map((i) => i.source))];
-          const dataSource = sources.includes("fatsecret") || sources.includes("openfoodfacts")
+          const multiSourceCount = apiItems.filter(
+            (i) => i.sources_used && i.sources_used.length > 1
+          ).length;
+          const dataSource = multiSourceCount > 0
+            ? (lang === "pt" ? "Cruzado entre múltiplas fontes" : "Cross-referenced across sources")
+            : sources.includes("fatsecret") || sources.includes("openfoodfacts")
             ? (lang === "pt" ? "Verificado por base de dados nutricional" : "Verified by nutrition database")
             : (lang === "pt" ? "Estimativa IA" : "AI estimate");
 
@@ -760,13 +767,22 @@ export default function LogPage() {
                   {lang === "pt" ? "Detalhe por alimento" : "Per-item breakdown"}
                 </p>
                 {result.items.map((item, i) => (
-                  <div key={i} className="bg-[#F2F2F7] rounded-xl p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
+                  <div key={i} className="bg-[#F2F2F7] rounded-xl p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-gray-900 capitalize">{item.name}</span>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${sourceColor(item.source)}`}>
-                          {sourceLabel(item.source)}
-                        </span>
+                        {/* Show all sources that were consulted */}
+                        {item.sources_used && item.sources_used.length > 1 ? (
+                          item.sources_used.map((s, j) => (
+                            <span key={j} className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${sourceColor(s)}`}>
+                              {sourceLabel(s)}
+                            </span>
+                          ))
+                        ) : (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${sourceColor(item.source)}`}>
+                            {sourceLabel(item.source)}
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-[#8E8E93]">{item.weight_g}g</span>
                     </div>
@@ -776,6 +792,16 @@ export default function LogPage() {
                       <span className="text-[#FF9500]">C: {item.carbs}g</span>
                       <span className="text-[#FF3B30]">F: {item.fats}g</span>
                     </div>
+                    {/* Show comparison from all sources */}
+                    {item.all_sources && item.all_sources.length > 1 && (
+                      <div className="flex gap-2 text-[10px] text-[#8E8E93] pt-0.5 flex-wrap">
+                        {item.all_sources.map((s, j) => (
+                          <span key={j} className="bg-white/60 px-1.5 py-0.5 rounded">
+                            {sourceLabel(s.source)}: {s.calories} kcal/100g
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

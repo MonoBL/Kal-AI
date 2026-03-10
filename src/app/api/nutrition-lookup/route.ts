@@ -23,12 +23,22 @@ async function getFatSecretToken(): Promise<string> {
   if (!res.ok) throw new Error("FatSecret token request failed");
   const data = await res.json();
   cachedToken = data.access_token;
-  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000; // refresh 1 min early
+  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
   return cachedToken!;
 }
 
+// ─── Per-100g nutrition data from any source ────────────────────────────────
+type NutritionPer100g = {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  source: "fatsecret" | "openfoodfacts" | "gemini_estimate";
+  matched_name?: string;
+};
+
 // ─── FatSecret food search ──────────────────────────────────────────────────
-async function searchFood(query: string, token: string) {
+async function fetchFatSecret(query: string, token: string): Promise<NutritionPer100g | null> {
   try {
     const res = await fetch("https://platform.fatsecret.com/rest/server.api", {
       method: "POST",
@@ -38,92 +48,201 @@ async function searchFood(query: string, token: string) {
       },
       body: `method=foods.search&search_expression=${encodeURIComponent(query)}&format=json&max_results=3`,
     });
-    if (!res.ok) {
-      console.error("FatSecret search error:", res.status, await res.text());
-      return null;
-    }
+    if (!res.ok) return null;
     const data = await res.json();
-    if (data?.error) {
-      console.error("FatSecret API error:", data.error);
-      return null;
-    }
-    return data?.foods?.food || null;
-  } catch (err) {
-    console.error("FatSecret search exception:", err);
+    if (data?.error) return null;
+
+    const foods = data?.foods?.food;
+    if (!foods) return null;
+    const food = Array.isArray(foods) ? foods[0] : foods;
+
+    const desc = (food.food_description as string) || "";
+    const calMatch = desc.match(/Calories:\s*([\d.]+)/i);
+    if (!calMatch) return null;
+
+    const fatMatch = desc.match(/Fat:\s*([\d.]+)/i);
+    const carbMatch = desc.match(/Carbs:\s*([\d.]+)/i);
+    const protMatch = desc.match(/Protein:\s*([\d.]+)/i);
+
+    const perMatch = desc.match(/Per\s+([\d.]+)(g|ml)/i);
+    const servingSize = perMatch ? parseFloat(perMatch[1]) : 100;
+    const scale = 100 / servingSize;
+
+    return {
+      calories: Math.round(parseFloat(calMatch[1]) * scale),
+      protein: Math.round(parseFloat(protMatch?.[1] || "0") * scale * 10) / 10,
+      carbs: Math.round(parseFloat(carbMatch?.[1] || "0") * scale * 10) / 10,
+      fats: Math.round(parseFloat(fatMatch?.[1] || "0") * scale * 10) / 10,
+      source: "fatsecret",
+      matched_name: (food.food_name as string) || undefined,
+    };
+  } catch {
     return null;
   }
 }
 
-// ─── OpenFoodFacts fallback search ──────────────────────────────────────────
-async function searchOpenFoodFacts(query: string) {
-  const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=3`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.products || null;
+// ─── OpenFoodFacts search ───────────────────────────────────────────────────
+async function fetchOpenFoodFacts(query: string): Promise<NutritionPer100g | null> {
+  try {
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=3`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const products = data?.products;
+    if (!products || products.length === 0) return null;
+
+    const nutriments = products[0].nutriments;
+    if (!nutriments) return null;
+
+    const cal = nutriments["energy-kcal_100g"];
+    if (!cal) return null;
+
+    return {
+      calories: Math.round(cal),
+      protein: Math.round((nutriments["proteins_100g"] || 0) * 10) / 10,
+      carbs: Math.round((nutriments["carbohydrates_100g"] || 0) * 10) / 10,
+      fats: Math.round((nutriments["fat_100g"] || 0) * 10) / 10,
+      source: "openfoodfacts",
+      matched_name: products[0].product_name || undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
-// ─── Parse FatSecret serving description ────────────────────────────────────
-function parseFatSecretNutrition(food: Record<string, unknown>): {
-  calories_per_100g: number;
-  protein_per_100g: number;
-  carbs_per_100g: number;
-  fats_per_100g: number;
-  source: string;
-} | null {
-  // FatSecret returns a description string like "Per 100g - Calories: 130kcal | Fat: 0.28g | Carbs: 28.17g | Protein: 2.69g"
-  const desc = (food.food_description as string) || "";
-
-  // Try to extract per-100g values
-  const calMatch = desc.match(/Calories:\s*([\d.]+)/i);
-  const fatMatch = desc.match(/Fat:\s*([\d.]+)/i);
-  const carbMatch = desc.match(/Carbs:\s*([\d.]+)/i);
-  const protMatch = desc.match(/Protein:\s*([\d.]+)/i);
-
-  if (!calMatch) return null;
-
-  // Check if it's per 100g or per serving
-  const perMatch = desc.match(/Per\s+([\d.]+)(g|ml)/i);
-  const servingSize = perMatch ? parseFloat(perMatch[1]) : 100;
-  const scale = 100 / servingSize;
-
+// ─── Gemini estimate as per-100g ────────────────────────────────────────────
+function geminiToPer100g(
+  geminiItem: { calories: number; protein: number; carbs: number; fats: number; weight_g: number },
+  weight_g: number
+): NutritionPer100g {
+  const w = geminiItem.weight_g || weight_g;
   return {
-    calories_per_100g: Math.round(parseFloat(calMatch[1]) * scale),
-    protein_per_100g: Math.round(parseFloat(protMatch?.[1] || "0") * scale * 10) / 10,
-    carbs_per_100g: Math.round(parseFloat(carbMatch?.[1] || "0") * scale * 10) / 10,
-    fats_per_100g: Math.round(parseFloat(fatMatch?.[1] || "0") * scale * 10) / 10,
-    source: "fatsecret",
+    calories: Math.round((geminiItem.calories / w) * 100),
+    protein: Math.round((geminiItem.protein / w) * 1000) / 10,
+    carbs: Math.round((geminiItem.carbs / w) * 1000) / 10,
+    fats: Math.round((geminiItem.fats / w) * 1000) / 10,
+    source: "gemini_estimate",
   };
 }
 
-// ─── Parse OpenFoodFacts product ────────────────────────────────────────────
-function parseOpenFoodFactsNutrition(product: Record<string, unknown>): {
-  calories_per_100g: number;
-  protein_per_100g: number;
-  carbs_per_100g: number;
-  fats_per_100g: number;
-  source: string;
-} | null {
-  const nutriments = product.nutriments as Record<string, number> | undefined;
-  if (!nutriments) return null;
+// ─── Consensus: compare all sources & pick best value ───────────────────────
+function pickBestNutrition(
+  sources: NutritionPer100g[],
+  foodName: string
+): NutritionPer100g & { sources_used: string[]; all_sources: { source: string; calories: number }[] } {
+  // Filter out nulls
+  const valid = sources.filter(Boolean);
 
-  const cal = nutriments["energy-kcal_100g"];
-  if (!cal) return null;
+  if (valid.length === 0) {
+    return {
+      calories: 0, protein: 0, carbs: 0, fats: 0,
+      source: "gemini_estimate",
+      sources_used: [],
+      all_sources: [],
+    };
+  }
 
+  if (valid.length === 1) {
+    const s = valid[0];
+    return {
+      ...s,
+      sources_used: [s.source],
+      all_sources: [{ source: s.source, calories: s.calories }],
+    };
+  }
+
+  const allSources = valid.map(s => ({ source: s.source, calories: s.calories }));
+
+  // If we have 2+ database sources (not gemini), prefer their consensus
+  const dbSources = valid.filter(s => s.source !== "gemini_estimate");
+  const geminiSource = valid.find(s => s.source === "gemini_estimate");
+
+  if (dbSources.length >= 2) {
+    // Check if the two DB sources agree (within 15% of each other on calories)
+    const [a, b] = dbSources;
+    const diff = Math.abs(a.calories - b.calories);
+    const avg = (a.calories + b.calories) / 2;
+    const agreement = avg > 0 ? diff / avg : 0;
+
+    if (agreement <= 0.15) {
+      // They agree — average them
+      console.log(`[consensus] "${foodName}": FatSecret (${a.calories}) & OpenFoodFacts (${b.calories}) agree → averaging`);
+      return {
+        calories: Math.round((a.calories + b.calories) / 2),
+        protein: Math.round(((a.protein + b.protein) / 2) * 10) / 10,
+        carbs: Math.round(((a.carbs + b.carbs) / 2) * 10) / 10,
+        fats: Math.round(((a.fats + b.fats) / 2) * 10) / 10,
+        source: a.source, // primary badge
+        matched_name: a.matched_name || b.matched_name,
+        sources_used: dbSources.map(s => s.source),
+        all_sources: allSources,
+      };
+    } else {
+      // They disagree — pick the one closer to Gemini (if available) as tiebreaker
+      if (geminiSource) {
+        const diffA = Math.abs(a.calories - geminiSource.calories);
+        const diffB = Math.abs(b.calories - geminiSource.calories);
+        const winner = diffA <= diffB ? a : b;
+        console.log(`[consensus] "${foodName}": DB sources disagree (${a.calories} vs ${b.calories}), Gemini (${geminiSource.calories}) as tiebreaker → ${winner.source}`);
+        return {
+          ...winner,
+          sources_used: valid.map(s => s.source),
+          all_sources: allSources,
+        };
+      }
+      // No Gemini — prefer FatSecret (curated database)
+      const winner = dbSources.find(s => s.source === "fatsecret") || dbSources[0];
+      return {
+        ...winner,
+        sources_used: dbSources.map(s => s.source),
+        all_sources: allSources,
+      };
+    }
+  }
+
+  if (dbSources.length === 1) {
+    // One DB source + Gemini — check if they agree
+    const db = dbSources[0];
+    if (geminiSource) {
+      const diff = Math.abs(db.calories - geminiSource.calories);
+      const avg = (db.calories + geminiSource.calories) / 2;
+      const agreement = avg > 0 ? diff / avg : 0;
+
+      if (agreement <= 0.20) {
+        // They agree — average, badge the DB source
+        console.log(`[consensus] "${foodName}": ${db.source} (${db.calories}) & Gemini (${geminiSource.calories}) agree → averaging`);
+        return {
+          calories: Math.round((db.calories + geminiSource.calories) / 2),
+          protein: Math.round(((db.protein + geminiSource.protein) / 2) * 10) / 10,
+          carbs: Math.round(((db.carbs + geminiSource.carbs) / 2) * 10) / 10,
+          fats: Math.round(((db.fats + geminiSource.fats) / 2) * 10) / 10,
+          source: db.source,
+          matched_name: db.matched_name,
+          sources_used: [db.source, "gemini_estimate"],
+          all_sources: allSources,
+        };
+      }
+      // Disagree — trust the DB
+      console.log(`[consensus] "${foodName}": ${db.source} (${db.calories}) & Gemini (${geminiSource.calories}) disagree → trusting DB`);
+    }
+    return {
+      ...db,
+      sources_used: valid.map(s => s.source),
+      all_sources: allSources,
+    };
+  }
+
+  // Only Gemini
   return {
-    calories_per_100g: Math.round(cal),
-    protein_per_100g: Math.round((nutriments["proteins_100g"] || 0) * 10) / 10,
-    carbs_per_100g: Math.round((nutriments["carbohydrates_100g"] || 0) * 10) / 10,
-    fats_per_100g: Math.round((nutriments["fat_100g"] || 0) * 10) / 10,
-    source: "openfoodfacts",
+    ...valid[0],
+    sources_used: ["gemini_estimate"],
+    all_sources: allSources,
   };
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
-type FoodItemInput = {
-  name: string;
-  weight_g: number;
-};
+type FoodItemInput = { name: string; weight_g: number };
 
 type FoodItemResult = {
   name: string;
@@ -132,14 +251,11 @@ type FoodItemResult = {
   protein: number;
   carbs: number;
   fats: number;
-  per_100g: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-  };
+  per_100g: { calories: number; protein: number; carbs: number; fats: number };
   source: "fatsecret" | "openfoodfacts" | "gemini_estimate";
   matched_name?: string;
+  sources_used: string[];
+  all_sources: { source: string; calories: number }[];
 };
 
 // ─── Main endpoint ──────────────────────────────────────────────────────────
@@ -165,89 +281,54 @@ export async function POST(req: NextRequest) {
     const results: FoodItemResult[] = [];
 
     for (const food of foods) {
-      let nutrition: {
-        calories_per_100g: number;
-        protein_per_100g: number;
-        carbs_per_100g: number;
-        fats_per_100g: number;
-        source: string;
-      } | null = null;
-      let matchedName: string | undefined;
+      console.log(`[nutrition-lookup] Looking up: "${food.name}" (${food.weight_g}g)`);
 
-      // 1. Try FatSecret
-      console.log(`[nutrition-lookup] Searching FatSecret for: "${food.name}"`);
-      const fsResults = await searchFood(food.name, token);
-      if (fsResults) {
-        const fsFood = Array.isArray(fsResults) ? fsResults[0] : fsResults;
-        nutrition = parseFatSecretNutrition(fsFood);
-        matchedName = (fsFood.food_name as string) || undefined;
-        if (nutrition) {
-          console.log(`[nutrition-lookup] FatSecret match: "${matchedName}" → ${nutrition.calories_per_100g} kcal/100g`);
-        }
-      }
+      // Query ALL sources in parallel
+      const [fsResult, offResult] = await Promise.all([
+        fetchFatSecret(food.name, token),
+        fetchOpenFoodFacts(food.name),
+      ]);
 
-      // 2. Fallback to OpenFoodFacts
-      if (!nutrition) {
-        console.log(`[nutrition-lookup] FatSecret miss, trying OpenFoodFacts for: "${food.name}"`);
-        const offResults = await searchOpenFoodFacts(food.name);
-        if (offResults && offResults.length > 0) {
-          nutrition = parseOpenFoodFactsNutrition(offResults[0]);
-          matchedName = (offResults[0].product_name as string) || undefined;
-          if (nutrition) {
-            console.log(`[nutrition-lookup] OpenFoodFacts match: "${matchedName}" → ${nutrition.calories_per_100g} kcal/100g`);
-          }
-        }
-      }
+      // Get Gemini estimate as per-100g
+      const geminiItem = gemini_estimates?.find(
+        (g) => g.name.toLowerCase() === food.name.toLowerCase()
+      );
+      const geminiResult = geminiItem
+        ? geminiToPer100g(geminiItem, food.weight_g)
+        : null;
 
-      if (!nutrition) {
-        console.log(`[nutrition-lookup] No API match for "${food.name}", using Gemini estimate`);
-      }
+      // Log what we got
+      if (fsResult) console.log(`  FatSecret: ${fsResult.calories} kcal/100g (${fsResult.matched_name})`);
+      else console.log(`  FatSecret: no match`);
+      if (offResult) console.log(`  OpenFoodFacts: ${offResult.calories} kcal/100g (${offResult.matched_name})`);
+      else console.log(`  OpenFoodFacts: no match`);
+      if (geminiResult) console.log(`  Gemini: ${geminiResult.calories} kcal/100g`);
 
-      // 3. Fallback to Gemini estimate
-      if (!nutrition) {
-        const geminiItem = gemini_estimates?.find(
-          (g) => g.name.toLowerCase() === food.name.toLowerCase()
-        );
-        if (geminiItem) {
-          const weight = geminiItem.weight_g || food.weight_g;
-          results.push({
-            name: food.name,
-            weight_g: food.weight_g,
-            calories: geminiItem.calories,
-            protein: geminiItem.protein,
-            carbs: geminiItem.carbs,
-            fats: geminiItem.fats,
-            per_100g: {
-              calories: Math.round((geminiItem.calories / weight) * 100),
-              protein: Math.round((geminiItem.protein / weight) * 1000) / 10,
-              carbs: Math.round((geminiItem.carbs / weight) * 1000) / 10,
-              fats: Math.round((geminiItem.fats / weight) * 1000) / 10,
-            },
-            source: "gemini_estimate",
-          });
-          continue;
-        }
-        // Skip item if no data at all
-        continue;
-      }
+      // Pick the best value using consensus
+      const allSources = [fsResult, offResult, geminiResult].filter(Boolean) as NutritionPer100g[];
+      const best = pickBestNutrition(allSources, food.name);
 
-      // Calculate actual values based on weight
+      console.log(`  → Winner: ${best.source} (${best.calories} kcal/100g), used: [${best.sources_used.join(", ")}]`);
+
+      // Scale to actual weight
       const factor = food.weight_g / 100;
       results.push({
         name: food.name,
         weight_g: food.weight_g,
-        calories: Math.round(nutrition.calories_per_100g * factor),
-        protein: Math.round(nutrition.protein_per_100g * factor * 10) / 10,
-        carbs: Math.round(nutrition.carbs_per_100g * factor * 10) / 10,
-        fats: Math.round(nutrition.fats_per_100g * factor * 10) / 10,
+        calories: Math.round(best.calories * factor),
+        protein: Math.round(best.protein * factor * 10) / 10,
+        carbs: Math.round(best.carbs * factor * 10) / 10,
+        fats: Math.round(best.fats * factor * 10) / 10,
         per_100g: {
-          calories: nutrition.calories_per_100g,
-          protein: nutrition.protein_per_100g,
-          carbs: nutrition.carbs_per_100g,
-          fats: nutrition.fats_per_100g,
+          calories: best.calories,
+          protein: best.protein,
+          carbs: best.carbs,
+          fats: best.fats,
         },
-        source: nutrition.source as "fatsecret" | "openfoodfacts",
-        matched_name: matchedName,
+        source: best.source,
+        matched_name: best.matched_name,
+        sources_used: best.sources_used,
+        all_sources: best.all_sources,
       });
     }
 
