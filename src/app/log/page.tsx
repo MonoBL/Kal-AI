@@ -421,18 +421,21 @@ export default function LogPage() {
   const handleSave = async () => {
     if (!result || !user) return;
     setSaving(true);
+    setError("");
     try {
       let imageUrl: string | undefined;
       if (image) {
         const fileName = `${user.id}/${Date.now()}.${image.name.split(".").pop()}`;
         const { error: uploadError } = await supabase.storage
           .from("meal-images").upload(fileName, image);
-        if (!uploadError) {
+        if (uploadError) {
+          console.error("Image upload error:", uploadError);
+        } else {
           const { data: urlData } = supabase.storage.from("meal-images").getPublicUrl(fileName);
           imageUrl = urlData.publicUrl;
         }
       }
-      await supabase.from("meals").insert({
+      const insertData = {
         user_id: user.id,
         description: result.dish_name || buildDescription(),
         calories: result.total_calories,
@@ -442,9 +445,20 @@ export default function LogPage() {
         image_url: imageUrl,
         meal_type: mealType,
         created_at: new Date(mealDate + "T" + new Date().toTimeString().slice(0, 8)).toISOString(),
-      });
+      };
+      console.log("Saving meal:", insertData);
+      const { error: insertError } = await supabase.from("meals").insert(insertData);
+      if (insertError) {
+        console.error("Meal insert error:", insertError);
+        setError(lang === "pt"
+          ? `Falha ao guardar: ${insertError.message}`
+          : `Failed to save: ${insertError.message}`);
+        setSaving(false);
+        return;
+      }
       router.push("/dashboard");
-    } catch {
+    } catch (err) {
+      console.error("Save error:", err);
       setError(lang === "pt" ? "Falha ao guardar refeição" : "Failed to save meal");
       setSaving(false);
     }
