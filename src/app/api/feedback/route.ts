@@ -1,21 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Anon client for user-facing operations (POST)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Lazy-initialized clients (avoid crashing at build time if env vars are missing)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
-// Admin client bypasses RLS for management operations (GET, PATCH)
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function GET() {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
       .from("feedback")
       .select("*")
       .order("created_at", { ascending: false });
@@ -39,7 +42,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Missing id or status" }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
       .from("feedback")
       .update({ status })
       .eq("id", id)
@@ -79,12 +82,13 @@ export async function POST(req: Request) {
       const ext = file.name.split(".").pop() || "png";
       const path = `${userId || "anonymous"}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-      const { error: uploadError } = await supabase.storage
+      const sb = getSupabase();
+      const { error: uploadError } = await sb.storage
         .from("feedback-screenshots")
         .upload(path, file, { contentType: file.type });
 
       if (!uploadError) {
-        const { data } = supabase.storage
+        const { data } = sb.storage
           .from("feedback-screenshots")
           .getPublicUrl(path);
         screenshotUrls.push(data.publicUrl);
@@ -92,7 +96,7 @@ export async function POST(req: Request) {
     }
 
     // Insert feedback row
-    const { data, error } = await supabase.from("feedback").insert({
+    const { data, error } = await getSupabase().from("feedback").insert({
       type,
       description,
       user_id: userId || null,
