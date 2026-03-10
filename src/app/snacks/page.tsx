@@ -18,6 +18,11 @@ type LabelResult = {
   fats_per_serving: number;
   per_100g: { calories: number; protein: number; carbs: number; fats: number };
   notes: string;
+  verification?: {
+    status: "verified" | "adjusted" | "label_only";
+    sources: { source: string; calories: number; matched_name?: string }[];
+    adjustment_note?: string;
+  };
 };
 
 type PageView = "list" | "add" | "quicklog";
@@ -38,6 +43,7 @@ export default function SnacksPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [context, setContext] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState<0 | 1 | 2 | 3>(0);
   const [labelResult, setLabelResult] = useState<LabelResult | null>(null);
   const [editName, setEditName] = useState("");
   const [editServing, setEditServing] = useState("");
@@ -85,16 +91,29 @@ export default function SnacksPage() {
       return;
     }
     setAnalyzing(true);
+    setAnalysisStep(1); // Reading label
     setError("");
     try {
       const fd = new FormData();
       fd.append("image", image);
       fd.append("language", lang);
+      fd.append("verify", "true");
       if (context) fd.append("context", context);
 
+      // Simulate step progression (the API does both steps internally)
+      const stepTimer = setTimeout(() => setAnalysisStep(2), 3000); // Verifying after ~3s
+
       const res = await fetch("/api/analyze-label", { method: "POST", body: fd });
+      clearTimeout(stepTimer);
+
       if (!res.ok) throw new Error("Analysis failed");
       const data: LabelResult = await res.json();
+
+      setAnalysisStep(2); // Show verifying briefly
+      await new Promise(r => setTimeout(r, 600));
+      setAnalysisStep(3); // Done
+      await new Promise(r => setTimeout(r, 400));
+
       setLabelResult(data);
       setEditName(data.product_name);
       setEditServing(data.serving_name);
@@ -102,6 +121,7 @@ export default function SnacksPage() {
       setError(lang === "pt" ? "Falha na análise. Tenta novamente." : "Analysis failed. Try again.");
     } finally {
       setAnalyzing(false);
+      setAnalysisStep(0);
     }
   };
 
@@ -144,6 +164,7 @@ export default function SnacksPage() {
     setImage(null);
     setImagePreview(null);
     setContext("");
+    setAnalysisStep(0);
     setLabelResult(null);
     setEditName("");
     setEditServing("");
@@ -368,22 +389,40 @@ export default function SnacksPage() {
             <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl text-center">{error}</div>
           )}
 
+          {/* Progress bar during analysis */}
+          {analyzing && analysisStep > 0 && (
+            <div className="card p-4 space-y-3">
+              {[
+                { step: 1, label: lang === "pt" ? "A ler etiqueta..." : "Reading label...", icon: "📸" },
+                { step: 2, label: lang === "pt" ? "A verificar com bases de dados..." : "Verifying with databases...", icon: "🔍" },
+                { step: 3, label: lang === "pt" ? "Concluído!" : "Done!", icon: "✅" },
+              ].map(s => {
+                const done = analysisStep > s.step;
+                const active = analysisStep === s.step;
+                return (
+                  <div key={s.step} className="flex items-center gap-3">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${
+                      done ? "bg-[#34C759] text-white" : active ? "bg-[#007AFF] text-white" : "bg-[#F2F2F7] text-[#8E8E93]"
+                    }`}>
+                      {done ? "✓" : s.step}
+                    </div>
+                    <span className={`text-sm ${active ? "font-semibold text-gray-900" : done ? "text-[#34C759] font-medium" : "text-[#8E8E93]"}`}>
+                      {s.label}
+                    </span>
+                    {active && <div className="w-4 h-4 rounded-full border-2 border-[#007AFF] border-t-transparent animate-spin ml-auto" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Analyze button */}
-          {image && !labelResult && (
-            <button onClick={handleAnalyzeLabel} disabled={analyzing} className="ios-button flex items-center justify-center gap-2">
-              {analyzing ? (
-                <>
-                  <div className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  {t.analyzingLabel}
-                </>
-              ) : (
-                <>
-                  <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                  </svg>
-                  {t.readLabel}
-                </>
-              )}
+          {image && !labelResult && !analyzing && (
+            <button onClick={handleAnalyzeLabel} className="ios-button flex items-center justify-center gap-2">
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+              </svg>
+              {t.readLabel}
             </button>
           )}
 
@@ -450,6 +489,48 @@ export default function SnacksPage() {
                     ))}
                   </div>
                 </div>
+
+                {/* Verification badge */}
+                {labelResult.verification && (
+                  <div className={`rounded-xl p-3 ${
+                    labelResult.verification.status === "verified" ? "bg-green-50" :
+                    labelResult.verification.status === "adjusted" ? "bg-amber-50" :
+                    "bg-gray-50"
+                  }`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm">
+                        {labelResult.verification.status === "verified" ? "✅" :
+                         labelResult.verification.status === "adjusted" ? "🔄" : "📋"}
+                      </span>
+                      <span className={`text-xs font-semibold ${
+                        labelResult.verification.status === "verified" ? "text-green-700" :
+                        labelResult.verification.status === "adjusted" ? "text-amber-700" :
+                        "text-gray-600"
+                      }`}>
+                        {labelResult.verification.status === "verified"
+                          ? (lang === "pt" ? "Verificado por bases de dados" : "Verified by nutrition databases")
+                          : labelResult.verification.status === "adjusted"
+                          ? (lang === "pt" ? "Ajustado com dados verificados" : "Adjusted with verified data")
+                          : (lang === "pt" ? "Apenas leitura da etiqueta" : "Label reading only")}
+                      </span>
+                    </div>
+                    {labelResult.verification.sources.length > 1 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {labelResult.verification.sources.map((s, i) => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/70 text-gray-600 font-medium">
+                            {s.source === "label" ? (lang === "pt" ? "Etiqueta" : "Label") :
+                             s.source === "fatsecret" ? "FatSecret" :
+                             s.source === "openfoodfacts" ? "OpenFoodFacts" : s.source}
+                            : {s.calories} kcal
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {labelResult.verification.adjustment_note && (
+                      <p className="text-[10px] text-amber-600 mt-1">{labelResult.verification.adjustment_note}</p>
+                    )}
+                  </div>
+                )}
 
                 {/* Notes from AI */}
                 {labelResult.notes && (
