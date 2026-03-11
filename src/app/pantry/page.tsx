@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import BottomNav from "@/components/BottomNav";
+
+const ADMIN_EMAIL = "nunom3ndes2005@gmail.com";
 
 interface RecipeIngredient {
   name: string;
@@ -66,6 +68,15 @@ export default function PantryPage() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [expandedRecipe, setExpandedRecipe] = useState<number | null>(null);
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const isAdmin = user?.email === ADMIN_EMAIL;
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && isAdmin) {
+      setDebugMode(localStorage.getItem("kal-debug") === "true");
+    }
+  }, [isAdmin]);
 
   if (loading) {
     return (
@@ -103,16 +114,21 @@ export default function PantryPage() {
     if (ingredients.length === 0) return;
     setSearching(true);
     setError("");
+    setDebugLog([]);
     setExpandedRecipe(null);
 
     try {
       const res = await fetch("/api/recipes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredients, number: 12 }),
+        body: JSON.stringify({ ingredients, number: 12, debug: debugMode }),
       });
 
       const data = await res.json();
+
+      if (data.debug) {
+        setDebugLog(data.debug);
+      }
 
       if (!res.ok) {
         setError(data.error || t.pantryError);
@@ -123,8 +139,11 @@ export default function PantryPage() {
       if (data.recipes?.length === 0) {
         setError(t.pantryNoResults);
       }
-    } catch {
+    } catch (err) {
       setError(t.pantryError);
+      if (debugMode) {
+        setDebugLog((prev) => [...prev, `[client] fetch error: ${err instanceof Error ? err.message : String(err)}`]);
+      }
     } finally {
       setSearching(false);
     }
@@ -261,6 +280,18 @@ export default function PantryPage() {
         {error && (
           <div className="card p-4 text-center text-[#FF3B30] text-sm">
             {error}
+          </div>
+        )}
+
+        {/* Debug Panel (admin only) */}
+        {debugMode && isAdmin && debugLog.length > 0 && (
+          <div className="rounded-2xl bg-gray-900 p-4 space-y-1">
+            <p className="text-xs font-bold text-gray-400 mb-2">DEBUG LOG</p>
+            {debugLog.map((line, i) => (
+              <p key={i} className="text-[11px] font-mono text-gray-300 break-all">
+                {line}
+              </p>
+            ))}
           </div>
         )}
 

@@ -4,46 +4,66 @@ const SPOONACULAR_KEY = process.env.SPOONACULAR_API_KEY;
 const BASE_URL = "https://api.spoonacular.com";
 
 export async function POST(req: NextRequest) {
+  const debugLogs: string[] = [];
+
   try {
-    const { ingredients, number = 10 } = await req.json();
+    const { ingredients, number = 10, debug = false } = await req.json();
+
+    debugLogs.push(`[config] API key present: ${!!SPOONACULAR_KEY}`);
+    debugLogs.push(`[config] API key length: ${SPOONACULAR_KEY?.length ?? 0}`);
+    debugLogs.push(`[input] ingredients: ${JSON.stringify(ingredients)}`);
 
     if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
       return NextResponse.json(
-        { error: "Please provide at least one ingredient" },
+        { error: "Please provide at least one ingredient", debug: debug ? debugLogs : undefined },
         { status: 400 }
       );
     }
 
-    const ingredientList = ingredients.join(",");
+    if (!SPOONACULAR_KEY) {
+      debugLogs.push("[error] SPOONACULAR_API_KEY env var is not set!");
+      return NextResponse.json(
+        { error: "API key not configured", debug: debug ? debugLogs : undefined },
+        { status: 500 }
+      );
+    }
 
-    // Find recipes by ingredients
-    const searchRes = await fetch(
-      `${BASE_URL}/recipes/findByIngredients?ingredients=${encodeURIComponent(ingredientList)}&number=${number}&ranking=1&ignorePantry=false&apiKey=${SPOONACULAR_KEY}`
-    );
+    const ingredientList = ingredients.join(",");
+    const searchUrl = `${BASE_URL}/recipes/findByIngredients?ingredients=${encodeURIComponent(ingredientList)}&number=${number}&ranking=1&ignorePantry=false&apiKey=${SPOONACULAR_KEY}`;
+
+    debugLogs.push(`[search] URL: ${searchUrl.replace(SPOONACULAR_KEY, "***")}`);
+
+    const searchRes = await fetch(searchUrl);
+    debugLogs.push(`[search] status: ${searchRes.status} ${searchRes.statusText}`);
 
     if (!searchRes.ok) {
       const errText = await searchRes.text();
+      debugLogs.push(`[search] error body: ${errText}`);
       console.error("Spoonacular search error:", errText);
       return NextResponse.json(
-        { error: "Failed to search recipes" },
+        { error: "Failed to search recipes", debug: debug ? debugLogs : undefined },
         { status: 500 }
       );
     }
 
     const recipes = await searchRes.json();
+    debugLogs.push(`[search] found ${recipes.length} recipes`);
 
-    // Get detailed info (nutrition + instructions) for each recipe
     const ids = recipes.map((r: { id: number }) => r.id).join(",");
     if (!ids) {
-      return NextResponse.json({ recipes: [] });
+      debugLogs.push("[search] no recipe IDs to fetch details for");
+      return NextResponse.json({ recipes: [], debug: debug ? debugLogs : undefined });
     }
 
-    const bulkRes = await fetch(
-      `${BASE_URL}/recipes/informationBulk?ids=${ids}&includeNutrition=true&apiKey=${SPOONACULAR_KEY}`
-    );
+    const bulkUrl = `${BASE_URL}/recipes/informationBulk?ids=${ids}&includeNutrition=true&apiKey=${SPOONACULAR_KEY}`;
+    debugLogs.push(`[bulk] fetching details for IDs: ${ids}`);
+
+    const bulkRes = await fetch(bulkUrl);
+    debugLogs.push(`[bulk] status: ${bulkRes.status} ${bulkRes.statusText}`);
 
     if (!bulkRes.ok) {
-      // Return basic results without details
+      const errText = await bulkRes.text();
+      debugLogs.push(`[bulk] error body: ${errText}`);
       return NextResponse.json({
         recipes: recipes.map((r: Record<string, unknown>) => ({
           id: r.id,
@@ -54,10 +74,12 @@ export async function POST(req: NextRequest) {
           usedCount: r.usedIngredientCount,
           missedCount: r.missedIngredientCount,
         })),
+        debug: debug ? debugLogs : undefined,
       });
     }
 
     const details = await bulkRes.json();
+    debugLogs.push(`[bulk] got details for ${details.length} recipes`);
     const detailMap = new Map(details.map((d: { id: number }) => [d.id, d]));
 
     const enriched = recipes.map((r: Record<string, unknown>) => {
@@ -93,11 +115,13 @@ export async function POST(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ recipes: enriched });
+    debugLogs.push(`[done] returning ${enriched.length} enriched recipes`);
+    return NextResponse.json({ recipes: enriched, debug: debug ? debugLogs : undefined });
   } catch (error) {
+    debugLogs.push(`[fatal] ${error instanceof Error ? error.message : String(error)}`);
     console.error("Recipe search error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Internal server error", debug: debugLogs },
       { status: 500 }
     );
   }
