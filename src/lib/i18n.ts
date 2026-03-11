@@ -112,6 +112,8 @@ export const translations = {
     pantryAbout: "About",
     pantryInstructions: "Instructions",
     pantryViewFull: "View full recipe",
+    more: "More",
+    close: "Close",
   },
   pt: {
     appName: "Kal AI",
@@ -226,6 +228,8 @@ export const translations = {
     pantryAbout: "Sobre",
     pantryInstructions: "Instruções",
     pantryViewFull: "Ver receita completa",
+    more: "Mais",
+    close: "Fechar",
   },
 };
 

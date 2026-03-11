@@ -8,6 +8,7 @@
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase)
 ![Gemini](https://img.shields.io/badge/Google-Gemini%202.5%20Flash-4285F4?style=flat-square&logo=google)
 ![FatSecret](https://img.shields.io/badge/FatSecret-API-FF6600?style=flat-square)
+![Spoonacular](https://img.shields.io/badge/Spoonacular-Recipe%20API-8BC34A?style=flat-square)
 ![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8?style=flat-square)
 
 ---
@@ -22,12 +23,15 @@
 | ⏳ **Live Progress Bar** | 3-step animated progress during analysis: Identifying → Verifying → Finalizing |
 | 🥩 **Ingredient Builder** | Select ingredients from categorized dropdowns (grains, meat, fish, vegetables, etc.) with gram inputs |
 | 🍪 **Common Snacks** | Save packaged snacks by photographing the nutrition label — AI reads per-serving macros. Quick-log later with a tap + quantity picker |
+| 🍳 **Pantry Recipes** | Enter ingredients you have at home — Spoonacular API suggests recipes with nutrition info, instructions, and ingredient match indicators. Supports Portuguese ingredient input with auto-translation |
 | 📊 **Daily Dashboard** | Circular calorie ring, macro progress bars, and a live meal list |
 | 📈 **Weekly / Monthly Charts** | Area chart and bar chart showing calorie trends over time (Recharts) |
 | 🏥 **Apple Health Aesthetic** | SF Pro font stack, iOS color palette, frosted-glass bottom nav, safe-area support |
+| 🧭 **Slide-out Navigation** | Clean 4-tab bottom bar (Dashboard, Log, Pantry, More) + slide-up drawer for secondary pages (Snacks, History, Profile, Feedback) |
 | 🌍 **Bilingual** | Full English ↔ Portuguese toggle — food names, UI labels, and AI responses |
 | 🔐 **Auth** | Email/password + Google OAuth via Supabase Auth |
 | 💬 **Feedback System** | In-app bug reports and feature requests with screenshot attachments |
+| 🛠️ **Admin Debug Mode** | Debug panel for admin accounts to troubleshoot API issues in production |
 | 📱 **Installable PWA** | `manifest.json` + service worker — add to Home Screen on iPhone |
 
 ---
@@ -48,15 +52,17 @@ src/
 │   ├── dashboard/page.tsx          # Today / Weekly / Monthly tabs
 │   ├── log/page.tsx                # Meal logging (camera + ingredient builder + progress bar)
 │   ├── snacks/page.tsx             # Common snacks manager + quick-log
+│   ├── pantry/page.tsx             # Pantry recipes — ingredient input + recipe results
 │   ├── history/page.tsx            # Meal history grouped by date
 │   ├── profile/page.tsx            # Settings, calorie goal, language, version info
 │   └── api/
 │       ├── analyze/route.ts        # Gemini meal analysis (identifies foods + portions)
 │       ├── analyze-label/route.ts  # Gemini nutrition label reader
 │       ├── nutrition-lookup/route.ts # FatSecret + OpenFoodFacts verification
+│       ├── recipes/route.ts        # Spoonacular recipe search by ingredients
 │       └── feedback/route.ts       # Bug reports & feature requests (admin CRUD)
 ├── components/
-│   ├── BottomNav.tsx               # iOS-style tab bar (5 tabs)
+│   ├── BottomNav.tsx               # 4-tab bottom bar + slide-up "More" drawer
 │   ├── CircularProgress.tsx        # SVG calorie ring
 │   ├── FloatingActions.tsx         # Global FAB (+ log meal)
 │   └── FeedbackWidget.tsx          # Floating feedback modal
@@ -91,11 +97,13 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 GEMINI_API_KEY=your_gemini_api_key
 FATSECRET_CLIENT_ID=your_fatsecret_client_id
 FATSECRET_CLIENT_SECRET=your_fatsecret_client_secret
+SPOONACULAR_API_KEY=your_spoonacular_api_key
 ```
 
 - **Supabase** → [supabase.com](https://supabase.com) — create a free project
 - **Gemini** → [aistudio.google.com](https://aistudio.google.com) — get a free API key
 - **FatSecret** → [platform.fatsecret.com](https://platform.fatsecret.com) — register for a free API key
+- **Spoonacular** → [spoonacular.com/food-api](https://spoonacular.com/food-api) — get a free API key
 
 ### 3. Set up Supabase database
 
@@ -201,18 +209,46 @@ npm start       # production server
                                                └─────────────┘
 ```
 
-1. **Step 1 — Gemini Vision**: Identifies individual food items, estimates portions from photo/description
-2. **Step 2 — FatSecret API**: Looks up each food for verified per-100g nutritional data
-3. **Step 3 — OpenFoodFacts**: Free fallback if FatSecret has no match
-4. **Step 4 — Gemini Estimate**: Last resort using AI training data
+### Pantry Recipe Flow
 
-Each item in the result shows a **source badge** so the user knows where the data came from.
+```
+┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│  User Input  │ ──► │  PT → EN         │ ──► │  Spoonacular     │
+│  Ingredients │     │  Translation     │     │  findByIngredients│
+│  (PT or EN)  │     │  (if needed)     │     │  + informationBulk│
+└──────────────┘     └──────────────────┘     └──────────────────┘
+```
+
+1. User enters ingredients in Portuguese or English
+2. Portuguese ingredients are auto-translated to English via a built-in dictionary
+3. Spoonacular `findByIngredients` finds matching recipes
+4. `informationBulk` enriches results with nutrition data, instructions, and serving info
 
 ### Nutrition Label Reader (`/api/analyze-label`)
 - Reads all columns on a nutrition label (per 100g, per serving, per pack)
 - Identifies the **individual serving** (1 cookie, 1 bar) — not per 100g or the full pack
 - Returns per-serving and per-100g values for user verification
 - Supports optional context (e.g. "pack of 4 cookies") for better accuracy
+
+---
+
+## 🐳 Docker Deployment
+
+The app ships with a multi-stage Dockerfile for self-hosted deployments:
+
+```bash
+docker build \
+  --build-arg NEXT_PUBLIC_SUPABASE_URL=... \
+  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+  --build-arg SUPABASE_SERVICE_ROLE_KEY=... \
+  --build-arg GEMINI_API_KEY=... \
+  --build-arg FATSECRET_CLIENT_ID=... \
+  --build-arg FATSECRET_CLIENT_SECRET=... \
+  --build-arg SPOONACULAR_API_KEY=... \
+  -t kal-ai .
+```
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) automatically builds and pushes to GitHub Container Registry on every push to `master`. Server-side env vars are injected as build-args from GitHub Secrets.
 
 ---
 
@@ -225,8 +261,10 @@ Each item in the result shows a **source badge** so the user knows where the dat
 | Database & Auth | Supabase (PostgreSQL + Auth) |
 | AI Vision | Google Gemini 2.5 Flash |
 | Nutrition Data | FatSecret API + OpenFoodFacts |
+| Recipe Search | Spoonacular API |
 | Charts | Recharts |
 | PWA | next-pwa |
+| Deployment | Docker + GitHub Actions → GHCR |
 | Language | TypeScript |
 
 ---
