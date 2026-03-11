@@ -42,25 +42,56 @@ interface Recipe {
   }>;
 }
 
-const COMMON_INGREDIENTS = [
+// Bilingual ingredient map: { en: pt }
+const INGREDIENT_MAP: Record<string, string> = {
   // Proteins
-  "chicken", "beef", "pork", "salmon", "tuna", "eggs", "shrimp", "turkey",
+  chicken: "frango", beef: "carne de vaca", pork: "porco", salmon: "salmão",
+  tuna: "atum", eggs: "ovos", shrimp: "camarão", turkey: "peru",
   // Dairy
-  "milk", "cheese", "butter", "yogurt", "cream",
+  milk: "leite", cheese: "queijo", butter: "manteiga", yogurt: "iogurte", cream: "natas",
   // Vegetables
-  "onion", "garlic", "tomato", "potato", "carrot", "broccoli", "spinach", "pepper", "mushroom", "lettuce", "cucumber", "zucchini",
+  onion: "cebola", garlic: "alho", tomato: "tomate", potato: "batata",
+  carrot: "cenoura", broccoli: "brócolos", spinach: "espinafre", pepper: "pimento",
+  mushroom: "cogumelo", lettuce: "alface", cucumber: "pepino", zucchini: "courgette",
   // Fruits
-  "lemon", "lime", "apple", "banana", "avocado",
+  lemon: "limão", lime: "lima", apple: "maçã", banana: "banana", avocado: "abacate",
   // Pantry staples
-  "rice", "pasta", "bread", "flour", "olive oil", "soy sauce", "vinegar",
+  rice: "arroz", pasta: "massa", bread: "pão", flour: "farinha",
+  "olive oil": "azeite", "soy sauce": "molho de soja", vinegar: "vinagre",
   // Canned / other
-  "beans", "chickpeas", "coconut milk", "corn",
-];
+  beans: "feijão", chickpeas: "grão-de-bico", "coconut milk": "leite de coco", corn: "milho",
+  // Extra common PT ingredients
+  ham: "fiambre", cod: "bacalhau", sausage: "chouriço", parsley: "salsa",
+  coriander: "coentros", "sweet potato": "batata-doce", cabbage: "couve",
+};
+
+// Reverse map: pt → en
+const PT_TO_EN: Record<string, string> = {};
+for (const [en, pt] of Object.entries(INGREDIENT_MAP)) {
+  PT_TO_EN[pt.toLowerCase()] = en;
+}
+
+const COMMON_INGREDIENTS_EN = Object.keys(INGREDIENT_MAP);
 
 export default function PantryPage() {
   const { user, loading } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const router = useRouter();
+  const isPt = lang === "pt";
+
+  // Helper: get display name for an ingredient (PT or EN)
+  const getDisplayName = (en: string) => (isPt && INGREDIENT_MAP[en]) ? INGREDIENT_MAP[en] : en;
+
+  // Helper: translate user input to English for API
+  const toEnglish = (input: string): string => {
+    const lower = input.trim().toLowerCase();
+    // Check if it's already an English key
+    if (INGREDIENT_MAP[lower]) return lower;
+    // Check PT → EN reverse map
+    if (PT_TO_EN[lower]) return PT_TO_EN[lower];
+    // Return as-is (user typed something custom)
+    return lower;
+  };
 
   const [ingredients, setIngredients] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -92,9 +123,9 @@ export default function PantryPage() {
   }
 
   const addIngredient = (name: string) => {
-    const cleaned = name.trim().toLowerCase();
-    if (cleaned && !ingredients.includes(cleaned)) {
-      setIngredients((prev) => [...prev, cleaned]);
+    const en = toEnglish(name);
+    if (en && !ingredients.includes(en)) {
+      setIngredients((prev) => [...prev, en]);
     }
     setInputValue("");
   };
@@ -149,10 +180,14 @@ export default function PantryPage() {
     }
   };
 
-  const filteredSuggestions = COMMON_INGREDIENTS.filter(
-    (i) =>
-      !ingredients.includes(i) &&
-      (inputValue === "" || i.includes(inputValue.toLowerCase()))
+  const filteredSuggestions = COMMON_INGREDIENTS_EN.filter(
+    (en) => {
+      if (ingredients.includes(en)) return false;
+      if (inputValue === "") return true;
+      const lower = inputValue.toLowerCase();
+      const pt = INGREDIENT_MAP[en]?.toLowerCase() || "";
+      return en.includes(lower) || pt.includes(lower);
+    }
   );
 
   const stripHtml = (html: string) => html.replace(/<[^>]*>/g, "");
@@ -201,7 +236,7 @@ export default function PantryPage() {
                   key={ing}
                   className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#007AFF]/10 text-[#007AFF] rounded-full text-sm font-medium"
                 >
-                  {ing}
+                  {getDisplayName(ing)}
                   <button
                     onClick={() => removeIngredient(ing)}
                     className="ml-0.5 hover:text-[#FF3B30] transition-colors"
@@ -232,7 +267,7 @@ export default function PantryPage() {
                     onClick={() => addIngredient(ing)}
                     className="px-2.5 py-1 bg-[#F2F2F7] text-gray-700 rounded-full text-xs font-medium hover:bg-[#E5E5EA] transition-colors"
                   >
-                    + {ing}
+                    + {getDisplayName(ing)}
                   </button>
                 ))}
               </div>
