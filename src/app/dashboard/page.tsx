@@ -23,8 +23,35 @@ export default function DashboardPage() {
   const [weeklyData, setWeeklyData] = useState<{ day: string; calories: number }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ week: string; calories: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const dailyGoal = profile?.daily_goal_calories || 2000;
+
+  const mealTypeLabel = (type?: string) => {
+    if (!type) return "";
+    const labels: Record<string, { en: string; pt: string; icon: string }> = {
+      breakfast: { en: "Breakfast", pt: "Peq-almoço", icon: "☀️" },
+      lunch: { en: "Lunch", pt: "Almoço", icon: "🍽️" },
+      dinner: { en: "Dinner", pt: "Jantar", icon: "🌙" },
+      snack: { en: "Snack", pt: "Lanche", icon: "🍎" },
+    };
+    const l = labels[type];
+    return l ? `${l.icon} ${lang === "pt" ? l.pt : l.en}` : type;
+  };
+
+  const mealTime = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString(lang === "pt" ? "pt-PT" : "en-GB", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const handleDeleteMeal = async (mealId: string) => {
+    setDeletingId(mealId);
+    const { error } = await supabase.from("meals").delete().eq("id", mealId);
+    if (!error) {
+      setTodayMeals(prev => prev.filter(m => m.id !== mealId));
+    }
+    setDeletingId(null);
+  };
 
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -218,14 +245,40 @@ export default function DashboardPage() {
               ) : (
                 <div>
                   {todayMeals.map((meal, i) => (
-                    <div key={meal.id} className={`px-4 py-3 flex items-center justify-between ${i < todayMeals.length - 1 ? "border-b border-gray-50" : ""}`}>
-                      <div>
-                        <div className="font-medium text-gray-900 text-sm">{meal.description}</div>
-                        <div className="text-xs text-[#8E8E93] mt-0.5">
-                          P {meal.protein}g · C {meal.carbs}g · F {meal.fats}g
+                    <div key={meal.id} className={`px-4 py-3 ${i < todayMeals.length - 1 ? "border-b border-gray-50" : ""}`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 text-sm">{meal.description}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {meal.meal_type && (
+                              <span className="text-[10px] font-semibold text-[#8E8E93] bg-[#F2F2F7] px-2 py-0.5 rounded-full">
+                                {mealTypeLabel(meal.meal_type)}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-[#8E8E93]">{mealTime(meal.created_at)}</span>
+                          </div>
+                          <div className="text-xs text-[#8E8E93] mt-1">
+                            P {meal.protein}g · C {meal.carbs}g · F {meal.fats}g
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 ml-3 flex-shrink-0">
+                          <span className="text-[#007AFF] font-semibold">{meal.calories} kcal</span>
+                          <button
+                            onClick={() => handleDeleteMeal(meal.id)}
+                            disabled={deletingId === meal.id}
+                            className="text-[#FF3B30] opacity-60 hover:opacity-100 transition-opacity p-1"
+                            title={lang === "pt" ? "Apagar" : "Delete"}
+                          >
+                            {deletingId === meal.id ? (
+                              <div className="w-4 h-4 rounded-full border-2 border-[#FF3B30] border-t-transparent animate-spin" />
+                            ) : (
+                              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
                       </div>
-                      <div className="text-[#007AFF] font-semibold">{meal.calories} kcal</div>
                     </div>
                   ))}
                 </div>
