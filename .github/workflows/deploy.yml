@@ -49,3 +49,4 @@ jobs:
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             FATSECRET_CLIENT_ID=${{ secrets.FATSECRET_CLIENT_ID }}
             FATSECRET_CLIENT_SECRET=${{ secrets.FATSECRET_CLIENT_SECRET }}
+            SPOONACULAR_API_KEY=${{ secrets.SPOONACULAR_API_KEY }}
