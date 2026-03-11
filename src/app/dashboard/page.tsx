@@ -20,10 +20,13 @@ export default function DashboardPage() {
 
   const [view, setView] = useState<ViewMode>("today");
   const [todayMeals, setTodayMeals] = useState<Meal[]>([]);
-  const [weeklyData, setWeeklyData] = useState<{ day: string; calories: number }[]>([]);
+  const [weeklyData, setWeeklyData] = useState<{ day: string; dateStr: string; calories: number }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ week: string; calories: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selectedDayMeals, setSelectedDayMeals] = useState<Meal[]>([]);
+  const [loadingDayMeals, setLoadingDayMeals] = useState(false);
 
   const dailyGoal = profile?.daily_goal_calories || 2000;
 
@@ -51,6 +54,23 @@ export default function DashboardPage() {
       setTodayMeals(prev => prev.filter(m => m.id !== mealId));
     }
     setDeletingId(null);
+  };
+
+  const handleDayClick = async (dateStr: string) => {
+    if (selectedDay === dateStr) { setSelectedDay(null); return; }
+    setSelectedDay(dateStr);
+    setLoadingDayMeals(true);
+    const dayStart = new Date(dateStr);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dateStr);
+    dayEnd.setHours(23, 59, 59, 999);
+    const { data } = await supabase
+      .from("meals").select("*").eq("user_id", user!.id)
+      .gte("created_at", dayStart.toISOString())
+      .lte("created_at", dayEnd.toISOString())
+      .order("created_at", { ascending: false });
+    setSelectedDayMeals(data || []);
+    setLoadingDayMeals(false);
   };
 
   const fetchData = useCallback(async () => {
@@ -94,8 +114,9 @@ export default function DashboardPage() {
       const d = new Date(m.created_at).toDateString();
       if (weekly[d] !== undefined) weekly[d] += m.calories;
     });
-    const weeklyArr = Object.entries(weekly).map(([dateStr, cal]) => ({
-      day: dayNames[new Date(dateStr).getDay()],
+    const weeklyArr = Object.entries(weekly).map(([ds, cal]) => ({
+      day: dayNames[new Date(ds).getDay()],
+      dateStr: ds,
       calories: Math.round(cal),
     }));
     setWeeklyData(weeklyArr);
@@ -172,7 +193,7 @@ export default function DashboardPage() {
           {(["today", "weekly", "monthly"] as ViewMode[]).map(v => (
             <button
               key={v}
-              onClick={() => setView(v)}
+              onClick={() => { setView(v); setSelectedDay(null); }}
               className={`flex-1 py-2 text-sm font-semibold rounded-xl transition-all ${
                 view === v ? "bg-[#007AFF] text-white shadow-sm" : "text-[#8E8E93]"
               }`}
@@ -325,8 +346,12 @@ export default function DashboardPage() {
               <h3 className="text-sm font-semibold text-[#8E8E93] mb-3">vs. Daily Goal ({dailyGoal} kcal)</h3>
               <div className="space-y-2">
                 {weeklyData.map((d, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-xs text-[#8E8E93] w-8">{d.day}</span>
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2 cursor-pointer rounded-lg px-1 py-1 transition-colors ${selectedDay === d.dateStr ? "bg-[#007AFF]/10" : "hover:bg-gray-50"}`}
+                    onClick={() => handleDayClick(d.dateStr)}
+                  >
+                    <span className={`text-xs w-8 ${selectedDay === d.dateStr ? "text-[#007AFF] font-bold" : "text-[#8E8E93]"}`}>{d.day}</span>
                     <div className="flex-1 bg-[#F2F2F7] rounded-full h-2">
                       <div
                         className={`h-2 rounded-full ${d.calories > dailyGoal ? "bg-[#FF3B30]" : "bg-[#34C759]"}`}
@@ -338,6 +363,54 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
+
+            {/* Selected day meals */}
+            {selectedDay && (
+              <div className="card overflow-hidden">
+                <div className="px-4 py-3 flex items-center justify-between border-b border-gray-50">
+                  <h3 className="font-semibold text-gray-900 text-sm">
+                    {new Date(selectedDay).toLocaleDateString(lang === "pt" ? "pt-PT" : "en-GB", { weekday: "long", day: "numeric", month: "short" })}
+                  </h3>
+                  <button onClick={() => setSelectedDay(null)} className="text-[#8E8E93] text-xs">✕</button>
+                </div>
+                {loadingDayMeals ? (
+                  <div className="py-6 flex justify-center">
+                    <div className="w-6 h-6 rounded-full border-2 border-[#007AFF] border-t-transparent animate-spin" />
+                  </div>
+                ) : selectedDayMeals.length === 0 ? (
+                  <div className="py-6 text-center text-[#8E8E93] text-sm">
+                    {lang === "pt" ? "Sem refeições neste dia" : "No meals this day"}
+                  </div>
+                ) : (
+                  <div>
+                    {selectedDayMeals.map((meal, i) => (
+                      <div key={meal.id} className={`px-4 py-3 ${i < selectedDayMeals.length - 1 ? "border-b border-gray-50" : ""}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-900 text-sm">{meal.description}</div>
+                            <div className="flex items-center gap-2 mt-1">
+                              {meal.meal_type && (
+                                <span className="text-[10px] font-semibold text-[#8E8E93] bg-[#F2F2F7] px-2 py-0.5 rounded-full">
+                                  {mealTypeLabel(meal.meal_type)}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-[#8E8E93]">{mealTime(meal.created_at)}</span>
+                            </div>
+                            <div className="text-xs text-[#8E8E93] mt-1">
+                              P {meal.protein}g · C {meal.carbs}g · F {meal.fats}g
+                            </div>
+                          </div>
+                          <span className="text-[#007AFF] font-semibold ml-3 flex-shrink-0">{meal.calories} kcal</span>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="px-4 py-2 bg-[#F2F2F7] text-xs text-[#8E8E93] text-center">
+                      {lang === "pt" ? "Total" : "Total"}: {selectedDayMeals.reduce((s, m) => s + m.calories, 0)} kcal
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
