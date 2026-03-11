@@ -7,7 +7,6 @@ const navItems = [
   { href: "/log", icon: "camera", labelKey: "logMeal" as const },
   { href: "/pantry", icon: "pantry", labelKey: "pantryNav" as const },
   { href: "/snacks", icon: "cookie", labelKey: "commonSnacks" as const },
-  { href: "/history", icon: "clock", labelKey: "history" as const },
   { href: "/profile", icon: "person", labelKey: "profile" as const },
 ];
 

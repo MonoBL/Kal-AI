@@ -305,6 +305,14 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+
+            {/* View History link */}
+            <button
+              onClick={() => router.push("/history")}
+              className="w-full py-2.5 text-center text-sm text-[#007AFF] font-medium"
+            >
+              {t.history} &rarr;
+            </button>
           </>
         )}
 
