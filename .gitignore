@@ -31,3 +31,4 @@ yarn-error.log*
 memory/
 instructions.md
 progress.txt
+article*.md
