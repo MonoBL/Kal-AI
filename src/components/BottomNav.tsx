@@ -13,7 +13,6 @@ const drawerItems = [
   { href: "/snacks", icon: "cookie", labelKey: "commonSnacks" as const },
   { href: "/history", icon: "clock", labelKey: "history" as const },
   { href: "/profile", icon: "person", labelKey: "profile" as const },
-  { href: "/feedback", icon: "feedback", labelKey: "feedback" as const },
 ];
 
 const icons: Record<string, React.ReactNode> = {
