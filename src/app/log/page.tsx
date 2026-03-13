@@ -28,6 +28,7 @@ const FOOD_DB: CategoryEntry[] = [
       { en: "Corn", pt: "Milho" },
       { en: "Quinoa", pt: "Quinoa" },
       { en: "Couscous", pt: "Cuscuz" },
+      { en: "Farofa", pt: "Farofa" },
       { en: "Tortilla", pt: "Tortilha" },
     ],
   },
@@ -41,6 +42,7 @@ const FOOD_DB: CategoryEntry[] = [
       { en: "Pork Chop", pt: "Costeleta de Porco" },
       { en: "Turkey Breast", pt: "Peito de Peru" },
       { en: "Lamb", pt: "Borrego" },
+      { en: "Breaded Cutlet", pt: "Panado" },
       { en: "Sausage", pt: "Salsicha" },
       { en: "Bacon", pt: "Bacon" },
       { en: "Ham", pt: "Fiambre" },
@@ -86,6 +88,7 @@ const FOOD_DB: CategoryEntry[] = [
       { en: "Green Peas", pt: "Ervilhas" },
       { en: "Tofu", pt: "Tofu" },
       { en: "Edamame", pt: "Edamame" },
+      { en: "Feijoada", pt: "Feijoada" },
     ],
   },
   {
@@ -146,6 +149,7 @@ const FOOD_DB: CategoryEntry[] = [
       { en: "Honey", pt: "Mel" },
       { en: "Sugar", pt: "Açúcar" },
       { en: "Jam", pt: "Compota" },
+      { en: "Beijinho", pt: "Beijinho" },
     ],
   },
   {
@@ -154,7 +158,7 @@ const FOOD_DB: CategoryEntry[] = [
   },
 ];
 
-type FoodItem = { id: number; catIdx: number; foodIdx: number; grams: string };
+type FoodItem = { id: number; catIdx: number; foodIdx: number; grams: string; customName?: string };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type NutritionItem = {
@@ -237,17 +241,22 @@ export default function LogPage() {
     setItems(prev => prev.map(i => i.id === id ? { ...i, grams } : i));
   };
 
+  const updateCustomName = (id: number, customName: string) => {
+    setItems(prev => prev.map(i => i.id === id ? { ...i, customName } : i));
+  };
+
   const buildDescription = () =>
     items
       .filter(i => i.grams && parseFloat(i.grams) > 0)
       .map(i => {
         const food = FOOD_DB[i.catIdx].foods[i.foodIdx];
+        const name = (food.en === "Other" && i.customName?.trim()) ? i.customName.trim() : food.en;
         if (food.unitGrams) {
           const units = parseFloat(i.grams);
           const totalG = Math.round(units * food.unitGrams);
-          return `${units} ${food.en} (${totalG}g)`;
+          return `${units} ${name} (${totalG}g)`;
         }
-        return `${i.grams}g ${food.en}`;
+        return `${i.grams}g ${name}`;
       })
       .join(", ");
 
@@ -696,11 +705,22 @@ export default function LogPage() {
                     </div>
                   </div>
 
+                  {/* Custom name input when "Other" is selected */}
+                  {food.en === "Other" && (
+                    <input
+                      type="text"
+                      value={item.customName || ""}
+                      onChange={e => updateCustomName(item.id, e.target.value)}
+                      placeholder={lang === "pt" ? "Escreve o nome do alimento..." : "Type the food name..."}
+                      className="w-full bg-[#F2F2F7] rounded-xl px-3 py-2 text-sm text-gray-800 outline-none border-0 placeholder:text-[#C7C7CC]"
+                    />
+                  )}
+
                   {item.grams && parseFloat(item.grams) > 0 && (
                     <p className="text-xs text-[#007AFF] font-medium pl-1">
                       → {food.unitGrams
                         ? `${item.grams}x ${lang === "pt" ? food.pt : food.en} (${Math.round(parseFloat(item.grams) * food.unitGrams)}g)`
-                        : `${item.grams}g ${lang === "pt" ? food.pt : food.en}`}
+                        : `${item.grams}g ${(food.en === "Other" && item.customName?.trim()) ? item.customName.trim() : (lang === "pt" ? food.pt : food.en)}`}
                     </p>
                   )}
                 </div>

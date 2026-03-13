@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
@@ -15,6 +15,26 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Catch auth errors from URL hash (e.g. expired magic link / OTP)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (hash.includes("error=")) {
+      const params = new URLSearchParams(hash.replace("#", ""));
+      const errorCode = params.get("error_code") || "";
+      const errorDesc = params.get("error_description")?.replace(/\+/g, " ") || "";
+      if (errorCode === "otp_expired" || errorDesc.includes("expired")) {
+        setError(lang === "pt"
+          ? "O link expirou. Por favor, tenta iniciar sessão novamente."
+          : "This link has expired. Please sign in again.");
+      } else {
+        setError(errorDesc || (lang === "pt" ? "Erro de autenticação" : "Authentication error"));
+      }
+      // Clean the URL hash
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, [lang]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

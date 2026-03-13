@@ -9,6 +9,12 @@ export default function Home() {
 
   useEffect(() => {
     if (!loading) {
+      // Forward auth errors from hash to login page
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      if (hash.includes("error=")) {
+        router.replace("/login" + hash);
+        return;
+      }
       if (user) router.replace("/dashboard");
       else router.replace("/login");
     }
