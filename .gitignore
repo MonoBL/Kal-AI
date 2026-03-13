@@ -32,3 +32,4 @@ memory/
 instructions.md
 progress.txt
 article*.md
+tsconfig.tsbuildinfo
