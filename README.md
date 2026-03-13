@@ -21,7 +21,7 @@
 | 🔍 **Multi-source Verification** | Nutrition data cross-referenced: FatSecret API → OpenFoodFacts → AI estimate fallback |
 | 📊 **Per-item Breakdown** | See calories and macros for each ingredient with source badges (FatSecret, OpenFoodFacts, AI Estimate) |
 | ⏳ **Live Progress Bar** | 3-step animated progress during analysis: Identifying → Verifying → Finalizing |
-| 🥩 **Ingredient Builder** | Select ingredients from categorized dropdowns (grains, meat, fish, vegetables, etc.) with gram inputs |
+| 🥩 **Ingredient Builder** | Select ingredients from categorized dropdowns (grains, meat, fish, vegetables, etc.) with gram inputs. Includes Brazilian & Portuguese foods (feijoada, farofa, panados, beijinho). Custom text input when selecting "Other" |
 | 🍪 **Common Snacks** | Save packaged snacks by photographing the nutrition label — AI reads per-serving macros. Quick-log later with a tap + quantity picker |
 | 🍳 **Pantry Recipes** | Enter ingredients you have at home — Spoonacular API suggests recipes with nutrition info, instructions, and ingredient match indicators. Supports Portuguese ingredient input with auto-translation |
 | 📊 **Daily Dashboard** | Circular calorie ring, macro progress bars, and a live meal list |
@@ -29,7 +29,7 @@
 | 🏥 **Apple Health Aesthetic** | SF Pro font stack, iOS color palette, frosted-glass bottom nav, safe-area support |
 | 🧭 **Slide-out Navigation** | Clean 4-tab bottom bar (Dashboard, Log, Pantry, More) + slide-up drawer for secondary pages (Snacks, History, Profile, Feedback) |
 | 🌍 **Bilingual** | Full English ↔ Portuguese toggle — food names, UI labels, and AI responses |
-| 🔐 **Auth** | Email/password + Google OAuth via Supabase Auth |
+| 🔐 **Auth** | Email/password + Google OAuth via Supabase Auth. Graceful handling of expired magic links with bilingual error messages |
 | 💬 **Feedback System** | In-app bug reports and feature requests with screenshot attachments |
 | 🛠️ **Admin Debug Mode** | Debug panel for admin accounts to troubleshoot API issues in production |
 | 📱 **Installable PWA** | `manifest.json` + service worker — add to Home Screen on iPhone |
@@ -47,8 +47,8 @@
 ```
 src/
 ├── app/
-│   ├── page.tsx                    # Auth redirect root
-│   ├── login/page.tsx              # Login + Sign Up + Google OAuth
+│   ├── page.tsx                    # Auth redirect root (forwards auth errors)
+│   ├── login/page.tsx              # Login + Sign Up + Google OAuth + expired link handling
 │   ├── dashboard/page.tsx          # Today / Weekly / Monthly tabs
 │   ├── log/page.tsx                # Meal logging (camera + ingredient builder + progress bar)
 │   ├── snacks/page.tsx             # Common snacks manager + quick-log
